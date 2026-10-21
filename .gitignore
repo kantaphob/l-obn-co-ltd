@@ -36,6 +36,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Local SQLite database and uploaded loan documents
+/.data/
+/storage/
+/generated/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

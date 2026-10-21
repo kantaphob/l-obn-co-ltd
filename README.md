@@ -16,6 +16,17 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## ตั้งค่าบัญชีผู้ดูแล
+
+ระบบนี้ใช้บัญชีผู้ดูแลหนึ่งบัญชีซึ่งมีสิทธิ์เต็ม และเก็บข้อมูลเข้าสู่ระบบไว้ใน environment variables:
+
+1. คัดลอก `.env.example` เป็น `.env.local`
+2. กำหนด `ADMIN_USERNAME` และ `ADMIN_PASSWORD` เป็นค่าที่คุณเลือก
+3. กำหนด `SESSION_SECRET` เป็นค่าสุ่มยาวอย่างน้อย 32 ตัวอักษร (เช่น `openssl rand -base64 32`)
+4. เริ่มแอปด้วย `npm run dev` แล้วเข้าสู่ระบบที่ `/login`
+
+เซสชันลงนามด้วย HMAC และเก็บใน HttpOnly cookie โดยหมดอายุใน 7 วัน การเข้าใช้งานหน้าแอปจะถูกตรวจสอบที่ Proxy ของ Next.js
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
