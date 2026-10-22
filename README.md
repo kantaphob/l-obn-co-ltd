@@ -31,6 +31,21 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Local database (Prisma + SQLite)
+
+The local database is `.data/loans.sqlite`. Set up a fresh database with:
+
+```sh
+cp .env.example .env.local
+mkdir -p .data
+touch .data/loans.sqlite
+npm run db:migrate -- --name init
+npm run db:seed
+npm run db:generate
+```
+
+Use `npm run db:studio` to inspect local data. Import company CSV files through Prisma with `npm run data:import -- "borrowers.csv" "company-ledger.csv"`. See [database setup notes](database/README.md) for details.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

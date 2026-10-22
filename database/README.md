@@ -1,48 +1,30 @@
-# ฐานข้อมูลใช้งานในเครื่อง
+# Local database
 
-ใช้ SQLite เก็บข้อมูลในไฟล์ `.data/loans.sqlite` โดยไม่ต้องติดตั้ง database server ตารางและความสัมพันธ์อยู่ใน [`schema.sql`](./schema.sql) ข้อมูลเงินจริงเก็บเป็นจำนวนเต็มหน่วยสตางค์ และวันเวลาเก็บเป็น ISO 8601 UTC
+This project uses Prisma ORM with SQLite. Prisma schema and migration history live in `prisma/`; the local database file is `.data/loans.sqlite` and is ignored by Git.
 
-## สร้างฐานข้อมูล
-
-รันจากโฟลเดอร์โปรเจกต์:
+## Initialize a fresh local database
 
 ```sh
-mkdir -p .data
-sqlite3 .data/loans.sqlite < database/schema.sql
-sqlite3 .data/loans.sqlite ".tables"
-```
-
-ไฟล์ฐานข้อมูลและไฟล์เอกสารแนบใน `storage/` ถูกเพิ่มไว้ใน `.gitignore` เพื่อไม่ให้ข้อมูลสมาชิกหรือเอกสารส่วนบุคคลถูก commit เข้า Git
-
-## โครงสร้างหลัก
-
-- `organizations`, `departments`, `members`: องค์กร แผนก และสมาชิก/พนักงาน
-- `loan_applications`, `loan_documents`: คำขอกู้ สถานะการพิจารณา และ metadata ของไฟล์เอกสาร โดยเก็บไฟล์จริงไว้นอกฐานข้อมูล
-- `loan_contracts`, `installments`: สัญญาที่สร้างจากคำขอที่อนุมัติ และตารางงวดชำระ
-- `payments`, `payment_allocations`: รายการรับเงินจริงและการจัดสรรยอดไปยังงวด รองรับการจ่ายบางส่วนหรือจ่ายหลายงวดในครั้งเดียว
-- `organization_settings`: ค่าตั้งค่า เช่น ชื่อองค์กร วงเงินสูงสุด และอัตราดอกเบี้ย
-- `audit_logs`: ประวัติการเปลี่ยนแปลงสำคัญ
-- `company_ledger_entries`: รายการบัญชีรายรับรายจ่ายที่นำเข้าจาก CSV
-
-สถานะใช้รหัสภาษาอังกฤษในฐานข้อมูล เช่น `pending`, `approved`, `needs_documents`, `rejected` แล้วแปลงเป็นข้อความภาษาไทยในส่วนแสดงผล ยอดคงเหลือควรคำนวณจากงวดและรายการจัดสรรชำระ ไม่บันทึกยอดซ้ำในตารางสมาชิก
-
-## Prisma ORM
-
-Prisma schema อยู่ที่ `prisma/schema.prisma` และ Prisma Client ถูกสร้างไปที่ `generated/prisma` ซึ่งไม่ commit เข้า Git การเชื่อมต่อฝั่ง server ใช้ singleton ใน `lib/prisma.ts` และ SQLite adapter เพื่อใช้ไฟล์ `.data/loans.sqlite` เดียวกับตัวนำเข้าข้อมูลบริษัท
-
-```sh
+cp .env.example .env.local
+npm install
+npm run db:migrate -- --name init
+npm run db:seed
 npm run db:generate
-npm run db:studio
 ```
 
-`npm run db:push` ใช้สร้างตารางจาก schema บนฐานข้อมูลใหม่ หรือปรับ schema ระหว่างพัฒนา ห้ามใช้กับฐานข้อมูลที่มีข้อมูลอยู่จนกว่าจะสำรองและทบทวน migration หน้าเว็บยังมีข้อมูลจำลองสำหรับส่วนสินเชื่อ และส่วนบัญชีบริษัท/สมาชิกที่นำเข้าจะอ่านผ่าน Prisma ใน API
+Start Prisma Studio with `npm run db:studio`. Start the app with `npm run dev`.
 
-ฐานข้อมูลเดิมมีข้อมูลนำเข้าและรูปแบบคีย์หลักบางตารางต่างจาก Prisma schema ปัจจุบัน จึงยังไม่ได้รัน `db:push` กับไฟล์ข้อมูลเดิม เพื่อป้องกันการเปลี่ยนตารางโดยไม่ตั้งใจ ให้สำรองไฟล์ก่อนและวางแผน migration ก่อน sync schema กับฐานข้อมูลนั้น
+## Import company CSV files
 
-## นำเข้าข้อมูลบริษัท
+The importer uses Prisma Client and can be rerun safely because it upserts records by employee code and source-row hash:
 
 ```sh
-python3 scripts/import_company_data.py "/path/to/borrowers.csv" "/path/to/company-ledger.csv"
+npm run data:import -- "/path/to/borrowers.csv" "/path/to/company-ledger.csv"
 ```
 
-ตัวนำเข้าทำซ้ำได้ โดยจับคู่ผู้กู้ด้วยรหัสผู้กู้ และจับคู่รายการบัญชีด้วย hash ของแถวต้นทาง ข้อมูลเลขบัตรประชาชน ที่อยู่ และวันเกิดอยู่ใน SQLite ฝั่งเซิร์ฟเวอร์ โดย API แดชบอร์ดไม่ส่งข้อมูลเหล่านี้ไปยังเบราว์เซอร์ ให้เก็บ `.data/` และไฟล์ CSV ต้นฉบับเป็นข้อมูลส่วนตัวและอย่า commit เข้า Git
+## Data conventions
+
+- Money amounts use `BigInt` satang (100 satang = 1 baht).
+- Status values are stored as stable English strings and translated in the UI.
+- Uploaded documents are stored outside SQLite; the database stores file metadata and paths only.
+- Use Prisma migrations for schema changes. `.data/` and `storage/` are private local data and must stay out of Git.
