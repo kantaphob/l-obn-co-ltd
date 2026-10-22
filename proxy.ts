@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isValidSessionToken, sessionCookie } from "./lib/auth";
+import { sessionCookie, verifySessionToken } from "./lib/session-token";
 
 export async function proxy(request: NextRequest) {
-  const authenticated = await isValidSessionToken(request.cookies.get(sessionCookie.name)?.value);
+  const authenticated = Boolean(await verifySessionToken(request.cookies.get(sessionCookie.name)?.value));
   const isLoginPage = request.nextUrl.pathname === "/login";
 
   if (!authenticated && !isLoginPage) {
@@ -17,5 +17,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/", "/login"],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };

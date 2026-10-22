@@ -60,6 +60,12 @@ function dateTimeUtc(date: string, time: string) {
   return new Date(Date.UTC(year, month - 1, day, hour - 7, minute));
 }
 
+function birthDate(value: string | null) {
+  if (!value) return null;
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T00:00:00.000Z`) : new Date(value);
+  return Number.isNaN(parsed.valueOf()) ? null : parsed;
+}
+
 async function importData(borrowerPath: string, ledgerPath: string) {
   const [borrowerContent, ledgerContent] = await Promise.all([
     readFile(borrowerPath, "utf8"),
@@ -82,42 +88,40 @@ async function importData(borrowerPath: string, ledgerPath: string) {
 
     const rawNationalId = clean(row["เลขบัตรประชาชน"]);
     const nationalId = rawNationalId?.includes("ไม่มี") ? null : rawNationalId;
-    const memberId = employeeCode;
-    const member = await prisma.member.upsert({
-      where: { organizationId_employeeCode: { organizationId, employeeCode } },
+    const [name, ...surname] = fullName.split(/\s+/);
+    const borrower = await prisma.borrowerProfile.upsert({
+      where: { borrowerNo: employeeCode },
       update: {
-        fullName,
+        name,
+        surname: surname.join(" ") || "-",
+        nationalId,
         nickname: clean(row["ชื่อเล่น"]),
         phone: clean(row["โทรศัพท์"]),
-        nationalId,
         address: clean(row["ที่อยู่"]),
-        dateOfBirth: clean(row["วันเกิด"]),
-        note: clean(row["หมายเหตุ"]),
-        employmentStatus: "active",
+        birthDate: birthDate(clean(row["วันเกิด"])),
+        status: "ACTIVE",
       },
       create: {
-        id: memberId,
-        organizationId,
-        employeeCode,
-        fullName,
+        borrowerNo: employeeCode,
+        name,
+        surname: surname.join(" ") || "-",
+        nationalId,
         nickname: clean(row["ชื่อเล่น"]),
         phone: clean(row["โทรศัพท์"]),
-        nationalId,
         address: clean(row["ที่อยู่"]),
-        dateOfBirth: clean(row["วันเกิด"]),
-        note: clean(row["หมายเหตุ"]),
+        birthDate: birthDate(clean(row["วันเกิด"])),
       },
       select: { id: true },
     });
-    memberIdsByCode.set(employeeCode, member.id);
+    memberIdsByCode.set(employeeCode, String(borrower.id));
   }
 
-  const memberRows = await prisma.member.findMany({
-    where: { organizationId, employeeCode: { not: null } },
-    select: { id: true, employeeCode: true },
+  const borrowerRows = await prisma.borrowerProfile.findMany({
+    where: { borrowerNo: { not: null } },
+    select: { id: true, borrowerNo: true },
   });
-  for (const member of memberRows) {
-    if (member.employeeCode) memberIdsByCode.set(member.employeeCode, member.id);
+  for (const borrower of borrowerRows) {
+    if (borrower.borrowerNo) memberIdsByCode.set(borrower.borrowerNo, String(borrower.id));
   }
 
   for (const row of ledgerRows) {
@@ -175,7 +179,7 @@ async function importData(borrowerPath: string, ledgerPath: string) {
   }
 
   const [memberCount, ledgerCount] = await Promise.all([
-    prisma.member.count({ where: { organizationId } }),
+    prisma.borrowerProfile.count(),
     prisma.companyLedgerEntry.count({ where: { organizationId } }),
   ]);
   console.log(`Imported borrower records: ${memberCount}`);

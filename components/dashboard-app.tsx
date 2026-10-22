@@ -1,12 +1,13 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "./icon";
 import CardReader from "./card-reader";
 import { LendersPanel } from "./lenders-panel";
 import { Sidebar, navByPath } from "./sidebar";
-import { Toast, type ToastKind, type ToastMessage } from "./toast";
+import { useToast, type ToastKind } from "./toast";
+import { Pagination, paginate } from "./pagination";
 
 type CurrentUser = { username: string; displayName: string; role: string };
 
@@ -31,7 +32,10 @@ type Contract = {
   id: string;
   applicationId: string;
   name: string;
+  phone?: string | null;
   amount: number;
+  interestAmount: number;
+  totalAmount: number;
   installments: number;
   monthlyPayment: number;
   annualInterestRate: number;
@@ -83,12 +87,12 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
   search: string;
   setSearch: (value: string) => void;
   onCreated: (entry: LedgerEntry) => void;
-  notify: (message: string) => void;
+  notify: (message: string, kind?: ToastKind) => void;
 }) {
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all");
+  const [pageState, setPageState] = useState({ key: "", page: 1 });
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
   const [type, setType] = useState<"income" | "expense">("income");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
@@ -102,8 +106,13 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
   const income = entries.reduce((sum, entry) => sum + entry.incomeSatang, 0);
   const expense = entries.reduce((sum, entry) => sum + entry.expenseSatang, 0);
   const query = search.trim().toLocaleLowerCase("th-TH");
+  const pageKey = `${query}|${typeFilter}`;
+  const page = pageState.key === pageKey ? pageState.page : 1;
   const visibleEntries = entries.filter((entry) => (typeFilter === "all" || entry.type === typeFilter)
     && `${entry.description} ${entry.category} ${entry.relatedParty ?? ""}`.toLocaleLowerCase("th-TH").includes(query));
+  const pageSize = 8;
+  const pageEntries = paginate(visibleEntries, page, pageSize);
+  const changePage = (nextPage: number) => setPageState({ key: pageKey, page: nextPage });
 
   function openEntryForm() {
     const now = new Date();
@@ -129,7 +138,6 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
   async function saveEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    setError("");
     try {
       const response = await fetch("/api/accounting/ledger", {
         method: "POST",
@@ -147,7 +155,7 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
       setNote("");
       notify("บันทึกรายการบัญชีแล้ว");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+      notify(reason instanceof Error ? reason.message : "เชื่อมต่อระบบไม่สำเร็จ กรุณาลองอีกครั้ง", "error");
     } finally {
       setSaving(false);
     }
@@ -169,10 +177,10 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
         <div className="ledger-tools-right"><label className="search-field"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหารายการ หมวดหมู่ หรือผู้เกี่ยวข้อง" /></label><button className="secondary-button ledger-export" onClick={exportCsv} disabled={visibleEntries.length === 0}><Icon name="download" size={15} /> ส่งออก CSV</button></div>
       </div>
       <div className="ledger-table-wrap"><table className="ledger-table"><thead><tr><th>วันที่ / เวลา</th><th>รายละเอียด</th><th>หมวดหมู่</th><th>ผู้เกี่ยวข้อง</th><th>รายรับ</th><th>รายจ่าย</th></tr></thead><tbody>
-        {visibleEntries.map((entry) => <tr key={entry.id}><td><span className="ledger-date">{new Date(`${entry.date}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span><small>{entry.time || "—"}</small></td><td><b>{entry.description}</b><small>{entry.type === "income" ? "รับเงิน" : "จ่ายเงิน"}</small></td><td>{entry.category}</td><td>{entry.relatedParty || "—"}</td><td className="ledger-income">{entry.incomeSatang ? `฿${money(entry.incomeSatang / 100)}` : "—"}</td><td className="ledger-expense">{entry.expenseSatang ? `฿${money(entry.expenseSatang / 100)}` : "—"}</td></tr>)}
+        {pageEntries.map((entry) => <tr key={entry.id}><td><span className="ledger-date">{new Date(`${entry.date}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</span><small>{entry.time || "—"}</small></td><td><b>{entry.description}</b><small>{entry.type === "income" ? "รับเงิน" : "จ่ายเงิน"}</small></td><td>{entry.category}</td><td>{entry.relatedParty || "—"}</td><td className="ledger-income">{entry.incomeSatang ? `฿${money(entry.incomeSatang / 100)}` : "—"}</td><td className="ledger-expense">{entry.expenseSatang ? `฿${money(entry.expenseSatang / 100)}` : "—"}</td></tr>)}
         {visibleEntries.length === 0 && <tr><td colSpan={6} className="ledger-empty">{entries.length ? "ไม่พบรายการที่ตรงกับการค้นหา" : "ยังไม่มีรายการบัญชี · เริ่มบันทึกรายรับหรือรายจ่ายรายการแรก"}</td></tr>}
       </tbody></table></div>
-      <div className="ledger-footer">แสดง {visibleEntries.length} จาก {entries.length} รายการ <span>หน่วยเงิน: บาท (THB)</span></div>
+      <div className="ledger-footer"><Pagination page={page} pageSize={pageSize} total={visibleEntries.length} onPageChange={changePage} /><span>หน่วยเงิน: บาท (THB)</span></div>
     </section>
     {showForm && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowForm(false); }}><section className="request-modal ledger-modal" role="dialog" aria-modal="true" aria-labelledby="ledger-form-title"><div className="modal-head"><div><span className="drawer-kicker">สมุดบัญชี · รายการใหม่</span><h2 id="ledger-form-title">บันทึกรายรับหรือรายจ่าย</h2><p>ระบุรายละเอียดและจำนวนเงินให้ครบก่อนบันทึก</p></div><button className="icon-button" onClick={() => setShowForm(false)} aria-label="ปิด">×</button></div><form onSubmit={saveEntry}>
       <div className="ledger-type-switch"><button type="button" className={type === "income" ? "selected income-selected" : ""} onClick={() => { setType("income"); setCategory("รับชำระเงินกู้"); }}>＋ รับเงินเข้า</button><button type="button" className={type === "expense" ? "selected expense-selected" : ""} onClick={() => { setType("expense"); setCategory("เงินเดือนและค่าจ้าง"); }}>− จ่ายเงินออก</button></div>
@@ -181,7 +189,6 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
       <div className="form-row"><label>หมวดหมู่<select value={category} onChange={(event) => setCategory(event.target.value)}>{ledgerCategories.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label>จำนวนเงิน (บาท)<input type="number" min="0.01" max="100000000" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" required /></label></div>
       <div className="form-row"><label>ผู้เกี่ยวข้อง (ถ้ามี)<input value={relatedParty} onChange={(event) => setRelatedParty(event.target.value)} placeholder="ชื่อบุคคลหรือบริษัท" /></label><label>ช่องทางชำระ<select value={paymentChannel} onChange={(event) => setPaymentChannel(event.target.value)}><option>โอนเงิน</option><option>เงินสด</option><option>หักเงินเดือน</option><option>เช็ค</option><option>อื่น ๆ</option></select></label></div>
       <div className="form-row"><label>เลขที่อ้างอิง (ถ้ามี)<input value={referenceNo} onChange={(event) => setReferenceNo(event.target.value)} placeholder="เลขที่ใบเสร็จ / รายการ" /></label><label>หมายเหตุ (ถ้ามี)<input value={note} onChange={(event) => setNote(event.target.value)} placeholder="บันทึกเพิ่มเติม" /></label></div>
-      {error && <div className="ledger-form-error" role="alert">{error}</div>}
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setShowForm(false)}>ยกเลิก</button><button type="submit" className="primary-button" disabled={saving}>{saving ? "กำลังบันทึก…" : "บันทึกรายการ"}</button></div>
     </form></section></div>}
   </div>;
@@ -233,26 +240,36 @@ type ModuleViewProps = {
 function ModuleView(props: ModuleViewProps) {
   const { activeNav, loans, search, setSearch, filter, setFilter, onSelect, onCreate, onCreateContract, contracts, notify, paidRepayments, onTogglePaid, members: memberRows, onAddMember, onEditMember, onDeleteMember, ledgerEntries } = props;
   const [selectedBorrower, setSelectedBorrower] = useState<Member | null>(null);
+  const [listPageState, setListPageState] = useState({ key: "", page: 1 });
+  const [contractPage, setContractPage] = useState(1);
+  const [repaymentPage, setRepaymentPage] = useState(1);
   const query = search.trim().toLowerCase();
+  const listPageKey = `${activeNav}|${query}|${filter}`;
+  const listPage = listPageState.key === listPageKey ? listPageState.page : 1;
+  const changeListPage = (nextPage: number) => setListPageState({ key: listPageKey, page: nextPage });
   const visibleLoans = loans.filter((loan) => (filter === "ทั้งหมด" || loan.status === filter) && `${loan.name} ${loan.id} ${loan.purpose}`.toLowerCase().includes(query));
+  const pageLoans = paginate(visibleLoans, listPage, 8);
+  const pageContracts = paginate(contracts, contractPage, 6);
+  const pageRepayments = paginate(initialRepayments, repaymentPage, 6);
 
   if (activeNav === "ผู้ให้กู้") return <LendersPanel />;
 
   if (activeNav === "อ่านบัตร") return <section className="module-page panel card-reader-page"><div className="module-header"><div><span className="drawer-kicker">เครื่องมือทะเบียนผู้ให้กู้</span><h2>อ่านข้อมูลจากบัตร</h2><p>อ่านชิปบัตรประชาชนผ่านเครื่อง ACS ACR39U แล้วบันทึกเข้าทะเบียนผู้ให้กู้</p></div></div><CardReader /></section>;
 
-  if (["คำขอกู้ยืม", "พิจารณาอนุมัติ"].includes(activeNav)) return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">จัดการสินเชื่อ</span><h2>{activeNav}</h2><p>ค้นหา ตรวจสอบสถานะ และเปิดรายละเอียดคำขอจากสมาชิก</p></div><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} /> สร้างคำขอ</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขที่คำขอ หรือวัตถุประสงค์" /></label><span>ทั้งหมด {visibleLoans.length} รายการ</span></div><div className="filter-tabs module-filter-tabs">{["ทั้งหมด", "รอพิจารณา", "อนุมัติแล้ว", "เอกสารไม่ครบ", "ปฏิเสธ"].map((tab) => <button key={tab} className={filter === tab ? "selected" : ""} onClick={() => setFilter(tab)}>{tab}</button>)}</div><div className="module-list">{visibleLoans.map((loan) => <button className="module-loan-row" key={loan.id} onClick={() => onSelect(loan)}><div className={`person-avatar ${loan.color}`}>{loan.initials}</div><div className="module-loan-person"><b>{loan.name}</b><small>{loan.id} · {loan.purpose}</small></div><strong>฿{money(loan.amount)}</strong><Status value={loan.status} /><Icon name="chevron" size={17} /></button>)}{visibleLoans.length === 0 && <div className="empty-state">ไม่พบคำขอ</div>}</div></section>;
+  if (["คำขอกู้ยืม", "พิจารณาอนุมัติ"].includes(activeNav)) return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">จัดการสินเชื่อ</span><h2>{activeNav}</h2><p>ค้นหา ตรวจสอบสถานะ และเปิดรายละเอียดคำขอจากสมาชิก</p></div><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} /> สร้างคำขอ</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขที่คำขอ หรือวัตถุประสงค์" /></label><span>ทั้งหมด {visibleLoans.length} รายการ</span></div><div className="filter-tabs module-filter-tabs">{["ทั้งหมด", "รอพิจารณา", "อนุมัติแล้ว", "เอกสารไม่ครบ", "ปฏิเสธ"].map((tab) => <button key={tab} className={filter === tab ? "selected" : ""} onClick={() => setFilter(tab)}>{tab}</button>)}</div><div className="module-list">{pageLoans.map((loan) => <button className="module-loan-row" key={loan.id} onClick={() => onSelect(loan)}><div className={`person-avatar ${loan.color}`}>{loan.initials}</div><div className="module-loan-person"><b>{loan.name}</b><small>{loan.id} · {loan.purpose}</small></div><strong>฿{money(loan.amount)}</strong><Status value={loan.status} /><Icon name="chevron" size={17} /></button>)}{visibleLoans.length === 0 && <div className="empty-state">ไม่พบคำขอ</div>}</div><Pagination page={listPage} pageSize={8} total={visibleLoans.length} onPageChange={changeListPage} /></section>;
 
-  if (["สัญญากู้ยืม", "สัญญากู้", "ตารางงวด", "ปฏิทินรับเงิน", "ค้างชำระ", "งานติดตามหนี้"].includes(activeNav)) return <div className="module-stack"><div className="module-header panel"><div><span className="drawer-kicker">การจัดการสินเชื่อ</span><h2>{activeNav}</h2><p>สร้างสัญญาจากคำขอที่อนุมัติแล้ว พร้อมระบุอัตราดอกเบี้ยตามข้อตกลง</p></div><div className="module-header-actions"><button className="primary-button" onClick={onCreateContract}><Icon name="plus" size={16} /> สร้างสัญญา</button></div></div><div className="summary-grid module-stats"><article className="summary-card"><div className="card-heading">สัญญาทั้งหมด</div><div className="metric-value">{contracts.length}<small> สัญญา</small></div></article><article className="summary-card"><div className="card-heading">เงินต้นตามสัญญา</div><div className="metric-value">฿{money(contracts.reduce((sum, item) => sum + item.amount, 0))}</div></article><article className="summary-card"><div className="card-heading">ครบกำหนด 7 วันนี้</div><div className="metric-value">{initialRepayments.length - paidRepayments.length}<small> รายการ</small></div></article><article className="summary-card"><div className="card-heading">รับชำระแล้วเดือนนี้</div><div className="metric-value">฿0</div></article></div>{contracts.length > 0 && <section className="panel module-page"><div className="panel-head"><div><h2>สัญญาที่สร้างล่าสุด</h2><p>อัตราดอกเบี้ยต่อปีและยอดชำระตามเงื่อนไขที่ตกลง</p></div></div><div className="repayment-table">{contracts.map((contract) => <div className="repayment-table-row" key={contract.id}><div className="repayment-date"><Icon name="file" size={16} /><span>{contract.id}</span></div><div className="repayment-person"><b>{contract.name}</b><small>{contract.annualInterestRate}% ต่อปี · {contract.installments} งวด · งวดแรก {new Date(`${contract.firstDueOn}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })} · {contract.repaymentMethod}</small></div><strong>฿{money(contract.monthlyPayment)}/งวด</strong><span className="status status-pending"><Icon name="clock" size={13} /> {contract.status}</span></div>)}</div></section>}<section className="panel module-page"><div className="panel-head"><div><h2>ตารางชำระที่ใกล้ถึง</h2><p>ติดตามกำหนดชำระและสถานะรายการ</p></div></div><div className="repayment-table">{initialRepayments.map((item) => { const isPaid = paidRepayments.includes(item.id); return <div className="repayment-table-row" key={item.id}><div className="repayment-date"><Icon name="clock" size={16} /><span>{item.due}</span></div><div className="repayment-person"><b>{item.name}</b><small>{item.id} · สัญญา {item.contract}</small></div><strong>฿{money(item.amount)}</strong>{isPaid ? <span className="status status-approved"><Icon name="check" size={13} /> ชำระแล้ว</span> : <button className="secondary-button small-button" onClick={() => onTogglePaid(item.id)}>บันทึกชำระแล้ว</button>}</div>; })}{initialRepayments.length === 0 && <div className="empty-state">ยังไม่มีรายการครบกำหนดในช่วงนี้</div>}</div></section></div>;
+  if (["สัญญากู้ยืม", "สัญญากู้", "ตารางงวด", "ปฏิทินรับเงิน", "ค้างชำระ", "งานติดตามหนี้"].includes(activeNav)) return <div className="module-stack"><div className="module-header panel"><div><span className="drawer-kicker">การจัดการสินเชื่อ</span><h2>{activeNav}</h2><p>สร้างสัญญาจากคำขอที่อนุมัติแล้ว พร้อมระบุอัตราดอกเบี้ยตามข้อตกลง</p></div><div className="module-header-actions"><button className="primary-button" onClick={onCreateContract}><Icon name="plus" size={16} /> สร้างสัญญา</button></div></div><div className="summary-grid module-stats"><article className="summary-card"><div className="card-heading">สัญญาทั้งหมด</div><div className="metric-value">{contracts.length}<small> สัญญา</small></div></article><article className="summary-card"><div className="card-heading">เงินต้นตามสัญญา</div><div className="metric-value">฿{money(contracts.reduce((sum, item) => sum + item.amount, 0))}</div></article><article className="summary-card"><div className="card-heading">ครบกำหนด 7 วันนี้</div><div className="metric-value">{initialRepayments.length - paidRepayments.length}<small> รายการ</small></div></article><article className="summary-card"><div className="card-heading">รับชำระแล้วเดือนนี้</div><div className="metric-value">฿0</div></article></div><section className="panel contracts-register"><div className="panel-head"><div><h2>ทะเบียนสัญญากู้</h2><p>เลขที่คำขอ เลขสัญญา ผู้กู้ และยอดตามสัญญา</p></div><span className="contract-count">{contracts.length} สัญญา</span></div>{contracts.length > 0 ? <div className="contract-table-scroll"><table className="contract-register-table"><thead><tr><th>สถานะสัญญา</th><th>เลขที่ใบคำขอ</th><th>เลขที่สัญญา</th><th>ชื่อลูกค้า</th><th>เบอร์โทรศัพท์</th><th>รูปแบบสัญญา</th><th>เงินต้น</th><th>ดอกเบี้ย</th><th>ยอดรวม</th></tr></thead><tbody>{pageContracts.map((contract) => <tr key={contract.id}><td><span className="status status-pending"><Icon name="clock" size={13} /> {contract.status}</span></td><td>{contract.applicationId}</td><td><b className="contract-number">{contract.id}</b></td><td>{contract.name}</td><td>{contract.phone || "—"}</td><td><span className={`contract-type ${contract.annualInterestRate === 0 ? "no-interest" : "with-interest"}`}>{contract.annualInterestRate === 0 ? "ไม่ตัดดอก" : "ตัดดอก"}</span></td><td>฿{money(contract.amount)}</td><td>฿{money(contract.interestAmount)}</td><td><b>฿{money(contract.totalAmount)}</b></td></tr>)}</tbody></table></div> : <div className="contract-register-empty"><span className="contract-empty-icon"><Icon name="file" size={19} /></span><b>ยังไม่มีสัญญากู้</b><span>เมื่อสร้างสัญญาจากคำขอที่อนุมัติแล้ว รายการจะแสดงที่นี่</span></div>}<Pagination page={contractPage} pageSize={6} total={contracts.length} onPageChange={setContractPage} /></section><section className="panel module-page"><div className="panel-head"><div><h2>ตารางชำระที่ใกล้ถึง</h2><p>ติดตามกำหนดชำระและสถานะรายการ</p></div></div><div className="repayment-table">{pageRepayments.map((item) => { const isPaid = paidRepayments.includes(item.id); return <div className="repayment-table-row" key={item.id}><div className="repayment-date"><Icon name="clock" size={16} /><span>{item.due}</span></div><div className="repayment-person"><b>{item.name}</b><small>{item.id} · สัญญา {item.contract}</small></div><strong>฿{money(item.amount)}</strong>{isPaid ? <span className="status status-approved"><Icon name="check" size={13} /> ชำระแล้ว</span> : <button className="secondary-button small-button" onClick={() => onTogglePaid(item.id)}>บันทึกชำระแล้ว</button>}</div>; })}{initialRepayments.length === 0 && <div className="empty-state">ยังไม่มีรายการครบกำหนดในช่วงนี้</div>}</div><Pagination page={repaymentPage} pageSize={6} total={initialRepayments.length} onPageChange={setRepaymentPage} /></section></div>;
 
   if (["สมาชิก", "ผู้กู้", "ภาพรวมผู้กู้"].includes(activeNav)) {
     const isBorrowerView = activeNav === "ผู้กู้" || activeNav === "ภาพรวมผู้กู้";
     const visibleMembers = memberRows.filter((member) => `${member.name} ${member.team} ${member.employeeCode ?? ""} ${member.phone ?? ""} ${member.nationalId ?? ""}`.toLowerCase().includes(query));
+    const pageMembers = paginate(visibleMembers, listPage, 8);
     const borrowerLoanCount = (memberId?: string) => loans.filter((loan) => loan.memberId === memberId).length;
     const borrowerLoanTotal = (memberId?: string) => loans.filter((loan) => loan.memberId === memberId).reduce((sum, loan) => sum + loan.amount, 0);
     const selectedBorrowerLoans = selectedBorrower ? loans.filter((loan) => loan.memberId === selectedBorrower.id) : [];
     return <>
       {isBorrowerView && <div className="summary-grid module-stats borrower-stats"><article className="summary-card"><div className="card-heading">ผู้กู้ทั้งหมด</div><div className="metric-value">{memberRows.length}<small> คน</small></div><div className="metric-foot">สมาชิกที่ยังใช้งาน</div></article><article className="summary-card"><div className="card-heading">มีรายการกู้</div><div className="metric-value">{memberRows.filter((member) => borrowerLoanCount(member.id) > 0).length}<small> คน</small></div><div className="metric-foot">มีประวัติคำขอกู้ในระบบ</div></article><article className="summary-card"><div className="card-heading">คำขอกู้ทั้งหมด</div><div className="metric-value">{loans.length}<small> รายการ</small></div><div className="metric-foot">เชื่อมกับข้อมูลผู้กู้</div></article><article className="summary-card"><div className="card-heading">ยอดวงเงินที่ขอ</div><div className="metric-value">฿{money(loans.reduce((sum, loan) => sum + loan.amount, 0))}</div><div className="metric-foot">รวมทุกสถานะคำขอ</div></article></div>}
-      <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">{isBorrowerView ? "ทะเบียนผู้กู้" : "สมาชิก"}</span><h2>{isBorrowerView ? "จัดการข้อมูลผู้กู้" : "จัดการข้อมูลสมาชิก"}</h2><p>เพิ่ม ดูรายละเอียด แก้ไข หรือนำผู้กู้ออกจากรายชื่อ พร้อมข้อมูลติดต่อและประวัติคำขอ</p></div><button className="primary-button" onClick={onAddMember}><Icon name="plus" size={17} /> {isBorrowerView ? "เพิ่มผู้กู้" : "เพิ่มสมาชิก"}</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ รหัสสมาชิก เบอร์โทร หรือเลขบัตร" /></label><span>แสดง {visibleMembers.length} จาก {memberRows.length} คน</span></div><div className="module-list">{visibleMembers.map((member) => { const count = borrowerLoanCount(member.id); const total = borrowerLoanTotal(member.id); return <div className="member-row" key={member.id ?? member.name}><button type="button" className="borrower-open" onClick={() => setSelectedBorrower(member)}><MemberAvatar member={member} /><div className="module-loan-person"><b>{member.name}</b><small>{member.employeeCode ? `${member.employeeCode} · ` : ""}{member.nickname ? `ชื่อเล่น ${member.nickname}` : member.team || "ไม่ระบุแผนก"}{member.phone ? ` · ${member.phone}` : ""}</small></div><div className="member-metric"><small>คำขอกู้</small><b>{count} รายการ</b></div><div className="member-metric"><small>วงเงินที่ขอ</small><b>฿{money(total)}</b></div></button><div className="member-actions"><button className="secondary-button small-button" onClick={() => onEditMember(member)}>แก้ไข</button><button className="member-delete-button" onClick={() => onDeleteMember(member)}>นำออก</button></div></div>; })}{visibleMembers.length === 0 && <div className="empty-state">{memberRows.length ? "ไม่พบผู้กู้ที่ตรงกับการค้นหา" : "ยังไม่มีผู้กู้ · เพิ่มรายชื่อเพื่อเริ่มจัดการข้อมูล"}</div>}</div></section>
+      <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">{isBorrowerView ? "ทะเบียนผู้กู้" : "สมาชิก"}</span><h2>{isBorrowerView ? "จัดการข้อมูลผู้กู้" : "จัดการข้อมูลสมาชิก"}</h2><p>เพิ่ม ดูรายละเอียด แก้ไข หรือนำผู้กู้ออกจากรายชื่อ พร้อมข้อมูลติดต่อและประวัติคำขอ</p></div><button className="primary-button" onClick={onAddMember}><Icon name="plus" size={17} /> {isBorrowerView ? "เพิ่มผู้กู้" : "เพิ่มสมาชิก"}</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ รหัสสมาชิก เบอร์โทร หรือเลขบัตร" /></label><span>แสดง {visibleMembers.length} จาก {memberRows.length} คน</span></div><div className="module-list">{pageMembers.map((member) => { const count = borrowerLoanCount(member.id); const total = borrowerLoanTotal(member.id); return <div className="member-row" key={member.id ?? member.name}><button type="button" className="borrower-open" onClick={() => setSelectedBorrower(member)}><MemberAvatar member={member} /><div className="module-loan-person"><b>{member.name}</b><small>{member.employeeCode ? `${member.employeeCode} · ` : ""}{member.nickname ? `ชื่อเล่น ${member.nickname}` : member.team || "ไม่ระบุแผนก"}{member.phone ? ` · ${member.phone}` : ""}</small></div><div className="member-metric"><small>คำขอกู้</small><b>{count} รายการ</b></div><div className="member-metric"><small>วงเงินที่ขอ</small><b>฿{money(total)}</b></div></button><div className="member-actions"><button className="secondary-button small-button" onClick={() => onEditMember(member)}>แก้ไข</button><button className="member-delete-button" onClick={() => onDeleteMember(member)}>นำออก</button></div></div>; })}{visibleMembers.length === 0 && <div className="empty-state">{memberRows.length ? "ไม่พบผู้กู้ที่ตรงกับการค้นหา" : "ยังไม่มีผู้กู้ · เพิ่มรายชื่อเพื่อเริ่มจัดการข้อมูล"}</div>}</div><Pagination page={listPage} pageSize={8} total={visibleMembers.length} onPageChange={changeListPage} /></section>
       {selectedBorrower && <div className="drawer-backdrop" onClick={() => setSelectedBorrower(null)}><aside className="detail-drawer borrower-drawer" role="dialog" aria-modal="true" aria-label={`รายละเอียดผู้กู้ ${selectedBorrower.name}`} onClick={(event) => event.stopPropagation()}><div className="drawer-head"><div><span className="drawer-kicker">รายละเอียดผู้กู้</span><h2>{selectedBorrower.name}</h2></div><button className="icon-button" onClick={() => setSelectedBorrower(null)} aria-label="ปิดรายละเอียด"><Icon name="close" /></button></div><div className="drawer-person"><MemberAvatar member={selectedBorrower} large /><div><b>{selectedBorrower.name}</b><small>{selectedBorrower.team || "ไม่ระบุแผนก"}</small></div></div><div className="drawer-section"><h3>ข้อมูลผู้กู้</h3><div className="detail-line"><span>รหัสสมาชิก</span><b>{selectedBorrower.employeeCode || selectedBorrower.id || "—"}</b></div><div className="detail-line"><span>ชื่อเล่น</span><b>{selectedBorrower.nickname || "—"}</b></div><div className="detail-line"><span>โทรศัพท์</span><b>{selectedBorrower.phone || "—"}</b></div><div className="detail-line"><span>เลขประจำตัวประชาชน</span><b>{selectedBorrower.nationalId || "—"}</b></div><div className="detail-line"><span>วันเกิด</span><b>{selectedBorrower.dateOfBirth || "—"}</b></div><div className="detail-line"><span>ที่อยู่</span><b>{selectedBorrower.address || "—"}</b></div></div><div className="drawer-section"><h3>ประวัติคำขอกู้ <small>({selectedBorrowerLoans.length} รายการ)</small></h3>{selectedBorrowerLoans.length ? selectedBorrowerLoans.map((loan) => <button type="button" className="borrower-loan-record" key={loan.id} onClick={() => { setSelectedBorrower(null); onSelect(loan); }}><span><b>{loan.id}</b><small>{loan.purpose} · {loan.date}</small></span><strong>฿{money(loan.amount)}</strong><Status value={loan.status} /></button>) : <div className="borrower-no-loans">ยังไม่มีประวัติคำขอกู้</div>}</div><div className="drawer-actions"><button className="secondary-button" onClick={() => { setSelectedBorrower(null); onEditMember(selectedBorrower); }}>แก้ไขข้อมูล</button><button className="primary-button" onClick={() => { setSelectedBorrower(null); onCreate(); }}>สร้างคำขอกู้</button></div></aside></div>}
     </>;
   }
@@ -263,13 +280,16 @@ function ModuleView(props: ModuleViewProps) {
 
   if (activeNav === "ตั้งค่าระบบ") return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">ระบบ</span><h2>ตั้งค่าระบบ</h2><p>กำหนดข้อมูลองค์กรและเงื่อนไขสินเชื่อพื้นฐาน</p></div></div><form className="settings-form" onSubmit={(event) => { event.preventDefault(); notify("บันทึกการตั้งค่าแล้ว"); }}><h3>ข้อมูลองค์กร</h3><label>ชื่อองค์กร<input value={props.companyName} onChange={(event) => props.setCompanyName(event.target.value)} required /></label><div className="form-row"><label>วงเงินกู้สูงสุดต่อคน (บาท)<input type="number" min="1000" value={props.loanLimit} onChange={(event) => props.setLoanLimit(event.target.value)} required /></label><label>อัตราดอกเบี้ยอ้างอิงต่อปี (%)<input type="number" min="0" step="0.01" value={props.monthlyInterest} onChange={(event) => props.setMonthlyInterest(event.target.value)} required /></label></div><div className="settings-note"><Icon name="check" size={16} /> เงื่อนไขนี้ใช้เป็นข้อมูลอ้างอิงในการจัดทำคำขอใหม่</div><button className="primary-button" type="submit">บันทึกการตั้งค่า</button></form></section>;
 
+  if (activeNav === "รหัสไปรษณีย์") return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">Masterdata</span><h2>รหัสไปรษณีย์</h2><p>ข้อมูลอ้างอิงจังหวัด อำเภอ ตำบล และรหัสไปรษณีย์สำหรับกรอกที่อยู่</p></div></div><div className="empty-state module-empty"><span className="metric-icon teal"><Icon name="database" size={20} /></span><b>ยังไม่มีข้อมูลรหัสไปรษณีย์</b><span>นำเข้าชุดข้อมูลจังหวัด อำเภอ และตำบลก่อน แล้วข้อมูลจะพร้อมใช้ในรายการที่อยู่</span></div></section>;
+
   const unavailableDetails: Record<string, string> = { "หลักประกัน": "จัดเก็บและติดตามทรัพย์สินที่ใช้เป็นหลักประกันสินเชื่อ", "บันทึกการทำงาน": "ตรวจสอบประวัติการเปลี่ยนแปลงข้อมูลและกิจกรรมของผู้ใช้", "เอกสาร": "จัดเก็บเอกสารสัญญาและเอกสารประกอบการกู้", "ถังขยะ": "เรียกคืนหรือตรวจสอบรายการที่นำออกจากระบบ" };
   return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">{activeNav}</span><h2>{activeNav}</h2><p>{unavailableDetails[activeNav] ?? "พื้นที่จัดการรายการในหมวดนี้"}</p></div></div><div className="empty-state module-empty"><Icon name="file" size={24} /><b>ยังไม่มีข้อมูลในหมวดนี้</b><span>เมนูพร้อมสำหรับเชื่อมต่อขั้นตอนการทำงานและข้อมูลจริง</span></div></section>;
 }
 
-export default function DashboardApp() {
+export default function DashboardApp({ children }: { children?: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const notify = useToast();
   const [loans, setLoans] = useState<Loan[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const activeNav = navByPath[pathname] ?? "ภาพรวม";
@@ -287,6 +307,9 @@ export default function DashboardApp() {
   const [contractInstallments, setContractInstallments] = useState("10");
   const [contractInterest, setContractInterest] = useState("0");
   const [customContractInterest, setCustomContractInterest] = useState(false);
+  const [contractStep, setContractStep] = useState<1 | 2 | 3>(1);
+  const [contractFirstDueOn, setContractFirstDueOn] = useState("2026-11-30");
+  const [contractRepaymentMethod, setContractRepaymentMethod] = useState("หักเงินเดือน");
   const [memberList, setMemberList] = useState<Member[]>([]);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [memberCardReading, setMemberCardReading] = useState(false);
@@ -296,9 +319,8 @@ export default function DashboardApp() {
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loanStep, setLoanStep] = useState<1 | 2>(1);
   const [loanPurpose, setLoanPurpose] = useState("");
-  const [borrowerChoice, setBorrowerChoice] = useState("new");
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-  const toastSequence = useRef(0);
+  const [borrowerChoice, setBorrowerChoice] = useState("");
+  const [loanBorrowersLoading, setLoanBorrowersLoading] = useState(false);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [paidRepayments, setPaidRepayments] = useState<string[]>([]);
   const [companyName, setCompanyName] = useState("บริษัท ลอบน์ จำกัด");
@@ -310,17 +332,22 @@ export default function DashboardApp() {
     fetch("/api/auth/me", { cache: "no-store" })
       .then(async (response) => response.ok ? (await response.json() as { user: CurrentUser }).user : null)
       .then((user) => { if (active) setCurrentUser(user); })
-      .catch(() => { if (active) setCurrentUser(null); });
+      .catch(() => { if (active) { setCurrentUser(null); notify("โหลดบัญชีผู้ใช้ไม่สำเร็จ กรุณาลองอีกครั้ง", "error"); } });
     fetch("/api/organization-data", { cache: "no-store" })
-      .then(async (response) => response.ok ? await response.json() as { members: Array<{ id: string; employeeCode: string | null; name: string; nickname: string | null }>; ledger: LedgerEntry[] } : null)
+      .then(async (response) => {
+        const data = await readApiResponse<{ members?: Array<{ id: string; employeeCode: string | null; name: string; nickname: string | null; team: string | null }>; ledger?: LedgerEntry[]; message?: string }>(response);
+        if (!response.ok) throw new Error(data.message ?? `โหลดข้อมูลสมาชิกและบัญชีไม่สำเร็จ (HTTP ${response.status})`);
+        if (!data.members || !data.ledger) throw new Error("รูปแบบข้อมูลสมาชิกและบัญชีไม่ถูกต้อง");
+        return { members: data.members, ledger: data.ledger };
+      })
       .then((data) => {
-        if (!active || !data) return;
+        if (!active) return;
         setMemberList(data.members.map((member) => ({
           id: member.id,
           employeeCode: member.employeeCode ?? undefined,
           name: member.name,
           nickname: member.nickname,
-          team: "สมาชิกที่นำเข้า",
+          team: member.team ?? "",
           loans: 0,
           balance: 0,
           state: "ปกติ",
@@ -328,9 +355,11 @@ export default function DashboardApp() {
         })));
         setLedgerEntries(data.ledger);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (active) notify(error instanceof Error ? error.message : "อ่านข้อมูลสมาชิกและบัญชีบริษัทไม่สำเร็จ", "error");
+      });
     return () => { active = false; };
-  }, []);
+  }, [notify]);
 
   useEffect(() => {
     let active = true;
@@ -343,19 +372,24 @@ export default function DashboardApp() {
         contractResponse.ok ? contractResponse.json() as Promise<{ contracts: Contract[] }> : null,
       ]);
       if (!active) return;
+      if (!loanResponse.ok) throw new Error("โหลดทะเบียนคำขอกู้ไม่สำเร็จ");
+      if (!contractResponse.ok) throw new Error("โหลดทะเบียนสัญญาไม่สำเร็จ");
       if (loanData) setLoans(loanData.loans);
       if (contractData) setContracts(contractData.contracts);
-    }).catch(() => undefined);
+    }).catch((reason: unknown) => { if (active) notify(reason instanceof Error ? reason.message : "โหลดข้อมูลสินเชื่อไม่สำเร็จ", "error"); });
     return () => { active = false; };
-  }, []);
+  }, [notify]);
 
   useEffect(() => {
     if (!["สมาชิก", "ผู้กู้", "ภาพรวมผู้กู้"].includes(activeNav)) return;
     let active = true;
     fetch("/api/members", { cache: "no-store" })
-      .then(async (response) => response.ok ? await response.json() as { members: Member[] } : null)
+      .then(async (response) => {
+        if (!response.ok) throw new Error("โหลดรายชื่อสมาชิกไม่สำเร็จ");
+        return await response.json() as { members: Member[] };
+      })
       .then((data) => {
-        if (!active || !data) return;
+        if (!active) return;
         setMemberList(data.members.map((member) => ({
           ...member,
           team: member.team ?? "",
@@ -365,9 +399,9 @@ export default function DashboardApp() {
           initials: member.name.replace(/\s+/g, "").slice(0, 2),
         })));
       })
-      .catch(() => undefined);
+      .catch((reason: unknown) => { if (active) notify(reason instanceof Error ? reason.message : "โหลดรายชื่อสมาชิกไม่สำเร็จ", "error"); });
     return () => { active = false; };
-  }, [activeNav]);
+  }, [activeNav, notify]);
 
   const filteredLoans = useMemo(() => loans.filter((loan) => {
     const matchesFilter = filter === "ทั้งหมด" || loan.status === filter;
@@ -377,6 +411,7 @@ export default function DashboardApp() {
   }), [loans, filter, search]);
   const eligibleLoans = loans.filter((loan) => loan.status === "อนุมัติแล้ว" && !contracts.some((contract) => contract.applicationId === loan.id));
   const selectedContractLoan = loans.find((loan) => loan.id === contractLoanId && loan.status === "อนุมัติแล้ว");
+  const selectedLoanBorrower = memberList.find((member) => (member.id ?? member.name) === borrowerChoice);
   const contractPreviewPayment = Number(contractInstallments) > 0
     ? (() => {
       const principal = Number(contractAmount || 0);
@@ -388,6 +423,8 @@ export default function DashboardApp() {
       return Math.round(payment);
     })()
     : 0;
+  const contractPreviewTotal = contractPreviewPayment * Number(contractInstallments || 0);
+  const contractPreviewInterest = Math.max(0, contractPreviewTotal - Number(contractAmount || 0));
   const totalIncomeSatang = ledgerEntries.reduce((sum, entry) => sum + entry.incomeSatang, 0);
   const totalExpenseSatang = ledgerEntries.reduce((sum, entry) => sum + entry.expenseSatang, 0);
   const expenseCategories = Object.entries(ledgerEntries.filter((entry) => entry.type === "expense").reduce<Record<string, number>>((groups, entry) => {
@@ -404,24 +441,41 @@ export default function DashboardApp() {
   const chartPoints = balanceSeries.map((value, index) => `${balanceSeries.length > 1 ? 24 + index / (balanceSeries.length - 1) * 452 : 24},${166 - ((value - seriesMin) / (seriesMax - seriesMin)) * 126}`).join(" ");
   const chartAreaPath = balanceSeries.length ? `M 24,166 L ${chartPoints.replaceAll(" ", " L ")} L 476,166 Z` : "";
 
-  const dismissToast = useCallback((toastId: number) => {
-    setToast((current) => current?.id === toastId ? null : current);
-  }, []);
-
-  function notify(message: string, kind?: ToastKind) {
-    const inferredKind = kind
-      ?? (/ไม่สำเร็จ|ผิดพลาด|ไม่พบ|ไม่สามารถ|เชื่อมต่อระบบไม่สำเร็จ/.test(message) ? "error"
-        : /กรุณา|รอพิจารณา|ต้องตรวจสอบ/.test(message) ? "warning"
-          : /บันทึก|เพิ่ม|แก้ไข|นำออก|สร้าง|อนุมัติ|ดาวน์โหลด|เรียบร้อย|สำเร็จ/.test(message) ? "success"
-            : "info");
-    setToast({ id: ++toastSequence.current, message, kind: inferredKind });
-  }
-
   function startLoanRequest() {
     setLoanStep(1);
     setLoanPurpose("");
-    setBorrowerChoice("new");
+    setBorrowerChoice("");
     setModal("loan");
+    setLoanBorrowersLoading(true);
+    fetch("/api/members", { cache: "no-store" })
+      .then(async (response) => response.ok ? await response.json() as { members: Member[] } : null)
+      .then((data) => {
+        if (!data) throw new Error("โหลดทะเบียนผู้กู้ไม่สำเร็จ");
+        const borrowers = data.members.map((member) => ({
+          ...member,
+          team: member.team ?? "",
+          loans: 0,
+          balance: 0,
+          state: "ปกติ",
+          initials: member.name.replace(/\s+/g, "").slice(0, 2),
+        }));
+        setMemberList(borrowers);
+        setBorrowerChoice(borrowers[0]?.id ?? borrowers[0]?.name ?? "");
+      })
+      .catch(() => notify("โหลดทะเบียนผู้กู้ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง", "error"))
+      .finally(() => setLoanBorrowersLoading(false));
+  }
+
+  async function readApiResponse<T>(response: Response): Promise<T> {
+    const body = await response.text();
+    if (!body.trim()) {
+      throw new Error(`เซิร์ฟเวอร์ไม่ส่งข้อมูลกลับมา (HTTP ${response.status}) กรุณาลองอีกครั้ง`);
+    }
+    try {
+      return JSON.parse(body) as T;
+    } catch {
+      throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (HTTP ${response.status}) กรุณาลองอีกครั้ง`);
+    }
   }
 
   async function changeStatus(id: string, status: LoanStatus) {
@@ -437,7 +491,7 @@ export default function DashboardApp() {
       setSelected(null);
       notify(status === "อนุมัติแล้ว" ? "อนุมัติคำขอเรียบร้อยแล้ว" : status === "ปฏิเสธ" ? "บันทึกผลการพิจารณาแล้ว" : "ส่งคำขอกลับไปแก้ไขแล้ว");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "บันทึกสถานะคำขอไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "บันทึกสถานะคำขอไม่สำเร็จ", "error");
     }
   }
 
@@ -445,27 +499,28 @@ export default function DashboardApp() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const chosenMember = memberList.find((member) => (member.id ?? member.name) === borrowerChoice);
-    const name = chosenMember?.name ?? String(form.get("name") ?? "").trim();
     const amount = Number(form.get("amount"));
     const term = Number(form.get("term"));
     const purpose = loanPurpose;
-    if (!purpose || !name) return;
-    const initials = name.replace(/\s+/g, "").slice(0, 2);
+    if (!purpose || !chosenMember?.id) {
+      notify("กรุณาเลือกผู้กู้จากทะเบียนก่อนบันทึกคำขอ", "warning");
+      setLoanStep(1);
+      return;
+    }
     try {
       const response = await fetch("/api/loans", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ memberId: chosenMember?.id, memberName: chosenMember ? undefined : name, purpose, amount, installments: term, note: activeNav === "ผู้ให้กู้" ? [`ฝ่ายบันทึก: ACS`, String(form.get("note") ?? "").trim()].filter(Boolean).join(" · ") : form.get("note") }),
+        body: JSON.stringify({ memberId: chosenMember.id, purpose, amount, installments: term, note: activeNav === "ผู้ให้กู้" ? [`ฝ่ายบันทึก: ACS`, String(form.get("note") ?? "").trim()].filter(Boolean).join(" · ") : form.get("note") }),
       });
       const result = await response.json() as { loan?: Loan; message?: string };
       if (!response.ok || !result.loan) throw new Error(result.message ?? "บันทึกคำขอกู้ยืมไม่สำเร็จ");
       setLoans((current) => [result.loan!, ...current]);
-      if (!chosenMember) setMemberList((current) => [{ id: result.loan!.memberId, name, team: "สมาชิก", loans: 0, balance: 0, state: "ปกติ", initials }, ...current]);
       setModal(null);
       setFilter("ทั้งหมด");
       notify("บันทึกคำขอกู้ยืมใหม่เรียบร้อยแล้ว");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "บันทึกคำขอกู้ยืมไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "บันทึกคำขอกู้ยืมไม่สำเร็จ", "error");
     }
   }
 
@@ -473,7 +528,7 @@ export default function DashboardApp() {
     setMemberCardReading(true);
     try {
       const response = await fetch("/api/card-reader", { method: "POST" });
-      const result = await response.json() as { card?: { fullName: string; nationalId: string; dateOfBirth: string; address: string; photo: string }; message?: string };
+      const result = await readApiResponse<{ card?: { fullName: string; nationalId: string; dateOfBirth: string; address: string; photo: string }; message?: string }>(response);
       if (!response.ok || !result.card) throw new Error(result.message ?? "อ่านข้อมูลจากบัตรไม่สำเร็จ");
       const card = result.card;
       const setField = (name: string, value: string) => {
@@ -488,7 +543,7 @@ export default function DashboardApp() {
       setMemberDetailsOpen(true);
       notify("อ่านข้อมูลและรูปถ่ายจากบัตรแล้ว กรุณาตรวจทานก่อนบันทึก");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "อ่านข้อมูลจากบัตรไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "อ่านข้อมูลจากบัตรไม่สำเร็จ", "error");
     } finally {
       setMemberCardReading(false);
     }
@@ -517,7 +572,7 @@ export default function DashboardApp() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const result = await response.json() as { member?: Partial<Member>; message?: string };
+      const result = await readApiResponse<{ member?: Partial<Member>; message?: string }>(response);
       if (!response.ok || !result.member) throw new Error(result.message ?? "บันทึกสมาชิกไม่สำเร็จ");
       const savedMember: Member = {
         ...result.member,
@@ -538,7 +593,7 @@ export default function DashboardApp() {
       setSearch("");
       notify(editingMember ? "บันทึกการแก้ไขสมาชิกแล้ว" : "เพิ่มสมาชิกใหม่เรียบร้อยแล้ว");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "บันทึกสมาชิกไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "บันทึกสมาชิกไม่สำเร็จ", "error");
     }
   }
 
@@ -560,7 +615,7 @@ export default function DashboardApp() {
       setMemberList((current) => current.filter((item) => item.id !== member.id));
       notify("นำสมาชิกออกจากรายชื่อแล้ว");
     } catch (error) {
-      notify(error instanceof Error ? error.message : "นำสมาชิกออกไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "นำสมาชิกออกไม่สำเร็จ", "error");
     }
   }
 
@@ -575,7 +630,10 @@ export default function DashboardApp() {
     const amount = Number(contractAmount);
     const installments = Number(contractInstallments);
     const interest = Number(contractInterest);
-    if (amount <= 0 || installments <= 0 || interest < 0) return;
+    if (amount <= 0 || installments <= 0 || interest < 0) {
+      notify("กรุณาตรวจสอบเงินต้น จำนวนงวด และอัตราดอกเบี้ย", "warning");
+      return;
+    }
     try {
       const response = await fetch("/api/contracts", {
         method: "POST",
@@ -588,8 +646,39 @@ export default function DashboardApp() {
       setModal(null);
       notify(`สร้างสัญญา ${result.contract.id} แล้ว · รอลงนาม`);
     } catch (error) {
-      notify(error instanceof Error ? error.message : "บันทึกสัญญาไม่สำเร็จ");
+      notify(error instanceof Error ? error.message : "บันทึกสัญญาไม่สำเร็จ", "error");
     }
+  }
+
+  function continueContractStep() {
+    if (contractStep === 1) {
+      if (!selectedContractLoan) {
+        notify("เลือกใบคำขอที่อนุมัติแล้วก่อนดำเนินการต่อ", "warning");
+        return;
+      }
+      setContractStep(2);
+      return;
+    }
+    const amount = Number(contractAmount);
+    const installments = Number(contractInstallments);
+    const interest = Number(contractInterest);
+    if (!selectedContractLoan || amount <= 0 || amount > selectedContractLoan.amount || amount > Number(loanLimit)) {
+      notify("เงินต้นต้องไม่เกินวงเงินที่อนุมัติ", "warning");
+      return;
+    }
+    if (!Number.isInteger(installments) || installments < 1 || installments > 36) {
+      notify("จำนวนงวดต้องอยู่ระหว่าง 1 ถึง 36 งวด", "warning");
+      return;
+    }
+    if (!Number.isFinite(interest) || interest < 0 || interest > 100) {
+      notify("อัตราดอกเบี้ยต้องอยู่ระหว่าง 0 ถึง 100% ต่อปี", "warning");
+      return;
+    }
+    if (!contractFirstDueOn) {
+      notify("เลือกวันครบกำหนดงวดแรก", "warning");
+      return;
+    }
+    setContractStep(3);
   }
 
   async function logout() {
@@ -602,7 +691,6 @@ export default function DashboardApp() {
       <Sidebar
         activeNav={activeNav}
         currentUser={currentUser}
-        companyName={companyName}
         mobileMenu={mobileMenu}
         pendingApprovalCount={pendingApprovalCount}
         onCloseMobileMenu={() => setMobileMenu(false)}
@@ -640,7 +728,8 @@ export default function DashboardApp() {
         <div className="content-wrap">
           <div className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot" /> {activeNav === "ภาพรวม" ? "วันทำงานที่ดี เริ่มจากใจที่สบาย" : "จัดการงานตามหมวดหมู่"}</div><h1>{activeNav === "ภาพรวม" ? <>สวัสดี, {currentUser?.displayName ?? currentUser?.username ?? "ผู้ดูแลระบบ"} <span className="wave">✦</span></> : activeNav}</h1><p className="welcome-sub">{activeNav === "ภาพรวม" ? "จัดการสินเชื่อและดูแลสมาชิกของคุณได้ในที่เดียว" : `พื้นที่${activeNav} · ข้อมูลองค์กร ${companyName}`}</p></div>{activeNav === "ภาพรวม" && <button className="primary-button" onClick={startLoanRequest}><Icon name="plus" size={18} /> สร้างคำขอกู้ยืม</button>}</div>
 
-          {activeNav === "ภาพรวม" ? <>
+
+          {(pathname === "/settings/masterdata/postcode" || pathname === "/admin/masterdata" ? children : null) ?? (activeNav === "ภาพรวม" ? <>
           <div className="summary-grid">
             <article className="summary-card"><div className="card-heading"><span>ผู้กู้ในระบบ</span><span className="metric-icon green"><Icon name="people" /></span></div><div className="metric-value">{memberList.length}<small> คน</small></div><div className="metric-foot"><span className="trend-up">ข้อมูลผู้กู้</span><span>จากฐานข้อมูลบริษัท</span></div><div className="sparkline spark-green"><span/><span/><span/><span/><span/><span/><span/><span/><span/><span/><span/></div></article>
             <article className="summary-card"><div className="card-heading"><span>คำขอรอพิจารณา</span><span className="metric-icon orange"><Icon name="clock" /></span></div><div className="metric-value">{loans.filter((loan) => loan.status === "รอพิจารณา").length}<small> รายการ</small></div><div className="metric-foot"><span className="trend-note">รอตรวจสอบ</span><span>คำขอสินเชื่อ</span></div><div className="sparkline spark-orange"><span/><span/><span/><span/><span/><span/><span/><span/><span/><span/><span/></div></article>
@@ -664,25 +753,35 @@ export default function DashboardApp() {
             </section>
 
             <aside className="right-column">
-              <section className="panel action-panel"><div className="panel-head compact"><div><h2>สิ่งที่ต้องทำ</h2><p>รายการที่ต้องติดตามวันนี้</p></div><span className="count-badge">{loans.filter((loan) => loan.status === "รอพิจารณา").length + 3}</span></div><div className="action-list"><button className="action-row" onClick={() => { setFilter("รอพิจารณา"); router.push("/loans/review"); }}><span className="action-icon amber"><Icon name="file" size={17} /></span><span><b>พิจารณาคำขอกู้ยืม</b><small>มี {loans.filter((loan) => loan.status === "รอพิจารณา").length} คำขอรออนุมัติ</small></span><strong>{loans.filter((loan) => loan.status === "รอพิจารณา").length}</strong></button><button className="action-row" onClick={() => notify("มีรายการชำระครบกำหนดวันนี้ 2 รายการ")}><span className="action-icon rose"><Icon name="clock" size={17} /></span><span><b>ติดตามการชำระเงิน</b><small>ครบกำหนดชำระวันนี้</small></span><strong>2</strong></button><button className="action-row" onClick={() => { setFilter("เอกสารไม่ครบ"); router.push("/loans/review"); }}><span className="action-icon lavender-bg"><Icon name="file" size={17} /></span><span><b>ตรวจสอบเอกสาร</b><small>รอสมาชิกส่งเอกสารเพิ่ม</small></span><strong>{loans.filter((loan) => loan.status === "เอกสารไม่ครบ").length}</strong></button></div><button className="action-link" onClick={() => notify("แสดงรายการติดตามทั้งหมด")}>ดูรายการทั้งหมด <Icon name="arrow" size={15} /></button></section>
-              <section className="panel repayment-panel"><div className="panel-head compact"><div><h2>กำหนดชำระใกล้ถึง</h2><p>รายการใน 7 วันข้างหน้า</p></div><button className="more-button" onClick={() => notify("เปิดปฏิทินกำหนดชำระ")}>•••</button></div><div className="repayment-list"><div className="repayment-row"><div className="date-tile"><b>22</b><small>ต.ค.</small></div><div className="repayment-person"><b>อรทัย จันทร์เพ็ญ</b><small>งวดที่ 4 จาก 10</small></div><strong>฿2,500</strong></div><div className="repayment-row"><div className="date-tile"><b>24</b><small>ต.ค.</small></div><div className="repayment-person"><b>ปรีชา ศรีสวัสดิ์</b><small>งวดที่ 2 จาก 6</small></div><strong>฿3,000</strong></div></div><button className="calendar-link" onClick={() => notify("เปิดตารางกำหนดชำระทั้งหมด")}>ดูตารางชำระทั้งหมด <Icon name="arrow" size={15} /></button></section>
+              <section className="panel action-panel"><div className="panel-head compact"><div><h2>สิ่งที่ต้องทำ</h2><p>รายการที่ต้องติดตามวันนี้</p></div><span className="count-badge">{loans.filter((loan) => loan.status === "รอพิจารณา").length + initialRepayments.length + loans.filter((loan) => loan.status === "เอกสารไม่ครบ").length}</span></div><div className="action-list"><button className="action-row" onClick={() => { setFilter("รอพิจารณา"); router.push("/loans/review"); }}><span className="action-icon amber"><Icon name="file" size={17} /></span><span><b>พิจารณาคำขอกู้ยืม</b><small>มี {loans.filter((loan) => loan.status === "รอพิจารณา").length} คำขอรออนุมัติ</small></span><strong>{loans.filter((loan) => loan.status === "รอพิจารณา").length}</strong></button><button className="action-row" onClick={() => router.push("/repayments/schedule")}><span className="action-icon rose"><Icon name="clock" size={17} /></span><span><b>ติดตามการชำระเงิน</b><small>{initialRepayments.length ? "ครบกำหนดภายใน 7 วัน" : "ยังไม่มีรายการครบกำหนด"}</small></span><strong>{initialRepayments.length}</strong></button><button className="action-row" onClick={() => { setFilter("เอกสารไม่ครบ"); router.push("/loans/review"); }}><span className="action-icon lavender-bg"><Icon name="file" size={17} /></span><span><b>ตรวจสอบเอกสาร</b><small>รอสมาชิกส่งเอกสารเพิ่ม</small></span><strong>{loans.filter((loan) => loan.status === "เอกสารไม่ครบ").length}</strong></button></div><button className="action-link" onClick={() => notify("แสดงรายการติดตามทั้งหมด")}>ดูรายการทั้งหมด <Icon name="arrow" size={15} /></button></section>
+              <section className="panel repayment-panel"><div className="panel-head compact"><div><h2>กำหนดชำระใกล้ถึง</h2><p>รายการใน 7 วันข้างหน้า</p></div><button className="more-button" onClick={() => notify("เปิดปฏิทินกำหนดชำระ")}>•••</button></div><div className="repayment-list"><div className="empty-state">ยังไม่มีสัญญาที่เริ่มชำระ</div></div><button className="calendar-link" onClick={() => router.push("/repayments/schedule")}>ดูตารางชำระทั้งหมด <Icon name="arrow" size={15} /></button></section>
             </aside>
           </div>
 
           <div className="bottom-note"><span className="note-spark">✳</span><div><b>สินเชื่อที่ดี เริ่มต้นจากความเข้าใจ</b><span>ทุกคำขอได้รับการพิจารณาอย่างเป็นธรรมและโปร่งใส</span></div><button onClick={() => notify("เปิดคู่มือแนวทางการพิจารณาสินเชื่อ")}>แนวทางการพิจารณา <Icon name="arrow" size={15} /></button><div className="note-decoration">ใจดี</div></div>
-          </> : <ModuleView activeNav={activeNav} loans={loans} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onSelect={setSelected} onCreate={startLoanRequest} onCreateContract={() => { const nextLoan = loans.find((loan) => loan.status === "อนุมัติแล้ว" && !contracts.some((contract) => contract.applicationId === loan.id)); if (nextLoan) { setContractLoanId(nextLoan.id); setContractAmount(String(nextLoan.amount)); setContractInstallments(String(nextLoan.term)); } setContractInterest(monthlyInterest); setCustomContractInterest(false); setModal("contract"); }} contracts={contracts} onAddMember={() => { setEditingMember(null); setMemberPhotoData(""); setMemberDetailsOpen(false); setModal("member"); }} onEditMember={(member) => { setEditingMember(member); setMemberPhotoData(member.photoData ?? ""); setMemberDetailsOpen(Boolean(member.nationalId || member.dateOfBirth || member.address)); setModal("member"); }} onDeleteMember={deleteMember} members={memberList} notify={notify} paidRepayments={paidRepayments} onTogglePaid={(id) => setPaidRepayments((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} companyName={companyName} setCompanyName={setCompanyName} loanLimit={loanLimit} setLoanLimit={setLoanLimit} monthlyInterest={monthlyInterest} setMonthlyInterest={setMonthlyInterest} ledgerEntries={ledgerEntries} onLedgerCreated={(entry) => setLedgerEntries((current) => [entry, ...current])} />}
+          </> : <ModuleView activeNav={activeNav} loans={loans} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onSelect={setSelected} onCreate={startLoanRequest} onCreateContract={() => { const nextLoan = loans.find((loan) => loan.status === "อนุมัติแล้ว" && !contracts.some((contract) => contract.applicationId === loan.id)); if (nextLoan) { setContractLoanId(nextLoan.id); setContractAmount(String(nextLoan.amount)); setContractInstallments(String(nextLoan.term)); } setContractInterest(monthlyInterest); setCustomContractInterest(false); setContractStep(1); setContractFirstDueOn("2026-11-30"); setContractRepaymentMethod("หักเงินเดือน"); setModal("contract"); }} contracts={contracts} onAddMember={() => { setEditingMember(null); setMemberPhotoData(""); setMemberDetailsOpen(false); setModal("member"); }} onEditMember={(member) => { setEditingMember(member); setMemberPhotoData(member.photoData ?? ""); setMemberDetailsOpen(Boolean(member.nationalId || member.dateOfBirth || member.address)); setModal("member"); }} onDeleteMember={deleteMember} members={memberList} notify={notify} paidRepayments={paidRepayments} onTogglePaid={(id) => setPaidRepayments((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} companyName={companyName} setCompanyName={setCompanyName} loanLimit={loanLimit} setLoanLimit={setLoanLimit} monthlyInterest={monthlyInterest} setMonthlyInterest={setMonthlyInterest} ledgerEntries={ledgerEntries} onLedgerCreated={(entry) => setLedgerEntries((current) => [entry, ...current])} />)}
           <footer className="footer"><span>© 2569 ใจดี · ระบบจัดการสินเชื่อสำหรับองค์กร</span><span>ข้อมูลอัปเดตล่าสุด 09:42 น.</span></footer>
         </div>
       </section>
 
       {selected && <div className="drawer-backdrop" onClick={() => setSelected(null)}><aside className="detail-drawer" onClick={(event) => event.stopPropagation()}><div className="drawer-head"><div><span className="drawer-kicker">รายละเอียดคำขอ</span><h2>{selected.id}</h2></div><button className="icon-button" onClick={() => setSelected(null)} aria-label="ปิดรายละเอียด"><Icon name="close" /></button></div><div className="drawer-person"><div className={`person-avatar large ${selected.color}`}>{selected.initials}</div><div><b>{selected.name}</b><small>{selected.team}</small></div></div><Status value={selected.status} /><div className="drawer-section"><h3>ข้อมูลคำขอ</h3><div className="detail-line"><span>วัตถุประสงค์</span><b>{selected.purpose}</b></div><div className="detail-line"><span>วงเงินที่ขอ</span><b>฿{money(selected.amount)}</b></div><div className="detail-line"><span>ระยะเวลาผ่อน</span><b>{selected.term} งวด</b></div><div className="detail-line"><span>วันที่ยื่นคำขอ</span><b>{selected.date}</b></div></div><div className="score-card"><div><span>คะแนนความพร้อม</span><b>{selected.score}<small>/100</small></b></div><div className="score-track"><span style={{ width: `${selected.score}%` }} /></div><small>ประเมินจากอายุงาน ประวัติชำระ และภาระหนี้</small></div><div className="drawer-section"><h3>เอกสารประกอบ</h3><div className="document-row"><span className="doc-icon"><Icon name="file" size={17} /></span><span><b>แบบฟอร์มคำขอกู้ยืม.pdf</b><small>อัปโหลด 18 ต.ค. 2569</small></span><button aria-label="ดาวน์โหลด"><Icon name="download" size={17} /></button></div><div className="document-row"><span className="doc-icon"><Icon name="file" size={17} /></span><span><b>สลิปเงินเดือนล่าสุด.pdf</b><small>อัปโหลด 18 ต.ค. 2569</small></span><button aria-label="ดาวน์โหลด"><Icon name="download" size={17} /></button></div></div><div className="drawer-actions"><button className="secondary-button" onClick={() => changeStatus(selected.id, "เอกสารไม่ครบ")}>ขอเอกสารเพิ่ม</button><button className="primary-button" onClick={() => changeStatus(selected.id, "อนุมัติแล้ว")}><Icon name="check" size={17} /> อนุมัติคำขอ</button></div></aside></div>}
 
-      {modal === "loan" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal loan-request-modal" role="dialog" aria-modal="true" aria-labelledby="loan-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สร้างรายการใหม่ · ขั้นตอน {loanStep} จาก 2</span><h2 id="loan-title">สร้างคำขอกู้ยืม</h2><p>{loanStep === 1 ? "เลือกวัตถุประสงค์เพื่อจัดหมวดคำขอ" : "เลือกผู้กู้หรือเพิ่มชื่อใหม่ แล้วระบุวงเงิน"}</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div><div className="loan-step-track"><span className={loanStep === 1 ? "active" : "complete"}>01 <b>วัตถุประสงค์</b></span><i /><span className={loanStep === 2 ? "active" : ""}>02 <b>ข้อมูลผู้กู้</b></span></div>{loanStep === 1 ? <div className="loan-focus-grid">{loanFocusOptions.map((option) => <button type="button" className={`loan-focus-option ${loanPurpose === option.value ? "selected" : ""}`} key={option.value} onClick={() => setLoanPurpose(option.value)}><span className="loan-focus-icon"><Icon name={option.icon} size={19} /></span><span><b>{option.title}</b><small>{option.detail}</small></span>{loanPurpose === option.value && <span className="loan-focus-check"><Icon name="check" size={15} /></span>}</button>)}<div className="loan-purpose-selected">{loanPurpose ? <>เลือกแล้ว: <b>{loanPurpose}</b></> : "เลือกหนึ่งรายการเพื่อดำเนินการต่อ"}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button><button type="button" className="primary-button" disabled={!loanPurpose} onClick={() => setLoanStep(2)}>ถัดไป: เลือกผู้กู้ <Icon name="arrow" size={16} /></button></div></div> : <form onSubmit={createLoan}><div className="loan-borrower-switch"><button type="button" className={borrowerChoice === "new" ? "selected" : ""} onClick={() => setBorrowerChoice("new")}><Icon name="plus" size={16} /> เพิ่มชื่อผู้กู้</button><button type="button" className={borrowerChoice !== "new" ? "selected" : ""} onClick={() => { if (memberList.length) setBorrowerChoice(memberList[0].id ?? memberList[0].name); }} disabled={!memberList.length}><Icon name="people" size={16} /> เลือกสมาชิกเดิม</button></div>{borrowerChoice === "new" ? <label>ชื่อผู้กู้<input name="name" required placeholder="ระบุชื่อและนามสกุล" /></label> : <label>เลือกผู้กู้<select value={borrowerChoice} onChange={(event) => setBorrowerChoice(event.target.value)}>{memberList.map((member) => <option key={member.id ?? member.name} value={member.id ?? member.name}>{member.name}{member.employeeCode ? ` · ${member.employeeCode}` : ""}</option>)}</select></label>}<div className="loan-purpose-summary"><span className="loan-focus-icon"><Icon name="check" size={17} /></span><span><small>วัตถุประสงค์ที่เลือก</small><b>{loanPurpose}</b></span><button type="button" onClick={() => setLoanStep(1)}>แก้ไข</button></div><div className="form-row"><label>วงเงินที่ต้องการ (บาท)<input name="amount" required type="number" min="1000" max={loanLimit} placeholder="10,000" /><small>วงเงินสูงสุด ฿{money(Number(loanLimit))}</small></label><label>จำนวนงวด<select name="term" defaultValue="6"><option value="3">3 งวด</option><option value="6">6 งวด</option><option value="10">10 งวด</option><option value="12">12 งวด</option></select></label></div><label>หมายเหตุ<textarea name="note" rows={3} placeholder="รายละเอียดเพิ่มเติม เช่น รายการค่าใช้จ่าย" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setLoanStep(1)}>ย้อนกลับ</button><button type="submit" className="primary-button">บันทึกคำขอ <Icon name="arrow" size={16} /></button></div></form>}</div></div>}
-      {modal === "contract" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">จัดการสินเชื่อ · สร้างจากคำขอที่อนุมัติ</span><h2 id="contract-title">สร้างสัญญายืมเงิน</h2><p>ตรวจสอบข้อมูลและเงื่อนไขให้ครบก่อนจัดทำสัญญา</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div>{eligibleLoans.length === 0 ? <div className="contract-empty"><span className="contract-empty-icon"><Icon name="check" /></span><b>ยังไม่มีคำขอที่พร้อมทำสัญญา</b><span>คำขอต้องได้รับอนุมัติก่อน จึงจะสร้างสัญญาได้</span><button className="secondary-button" onClick={() => { setModal(null); router.push("/loans/review"); }}>ไปที่คำขอกู้ยืม</button></div> : <form onSubmit={createContract}><div className="contract-section-label"><span>01</span> เลือกคำขอที่อนุมัติ</div><label>คำขอกู้ยืม<select value={contractLoanId} onChange={(event) => { const loan = loans.find((item) => item.id === event.target.value); setContractLoanId(event.target.value); if (loan) { setContractAmount(String(loan.amount)); setContractInstallments(String(loan.term)); } }} required>{eligibleLoans.map((loan) => <option key={loan.id} value={loan.id}>{loan.id} · {loan.name} · ฿{money(loan.amount)}</option>)}</select></label>{selectedContractLoan && <div className="contract-member-card"><div className={`person-avatar ${selectedContractLoan.color}`}>{selectedContractLoan.initials}</div><div><b>{selectedContractLoan.name}</b><span>{selectedContractLoan.team} · {selectedContractLoan.purpose}</span></div><Status value={selectedContractLoan.status} /></div>}<div className="contract-section-label"><span>02</span> กำหนดเงื่อนไขสัญญา</div><div className="form-row"><label>เงินต้น (บาท)<input type="number" min="1" max={loanLimit} value={contractAmount} onChange={(event) => setContractAmount(event.target.value)} required /><small>วงเงินสูงสุดตามนโยบาย ฿{money(Number(loanLimit))}</small></label><label>จำนวนงวด<input type="number" min="1" max="36" value={contractInstallments} onChange={(event) => setContractInstallments(event.target.value)} required /><small>แบ่งชำระรายเดือน</small></label></div><div className="form-row"><div className="contract-rate-picker"><label>ดอกเบี้ยต่อปี (%)<select className="contract-rate-select" value={customContractInterest ? "custom" : contractInterest} onChange={(event) => { const value = event.target.value; if (value === "custom") setCustomContractInterest(true); else { setContractInterest(value); setCustomContractInterest(false); } }}><option value="0">ไม่คิดดอกเบี้ย · 0%</option>{["5", "10", "15", "20", "25"].map((rate) => <option key={rate} value={rate}>ลดต้นลดดอก · {rate}% ต่อปี</option>)}<option value="custom">กำหนดอัตราเอง</option></select></label>{customContractInterest && <label>ระบุอัตราดอกเบี้ยลดต้นลดดอกต่อปี (%)<input type="number" min="0" max="100" step="0.01" value={contractInterest} onChange={(event) => setContractInterest(event.target.value)} required /></label>}<small>{Number(contractInterest) === 0 ? "แบ่งชำระเงินต้นเท่ากัน โดยไม่มีดอกเบี้ย" : "คำนวณยอดผ่อนรายเดือนจากเงินต้นคงเหลือ"}</small></div><label>วันครบกำหนดงวดแรก<input type="date" name="firstDueOn" defaultValue="2026-11-30" required /><small>งวดถัดไปครบกำหนดวันเดียวกันของเดือน</small></label></div><label>วิธีชำระ<select name="repaymentMethod" defaultValue="หักเงินเดือน"><option>หักเงินเดือน</option><option>โอนเงินผ่านธนาคาร</option><option>ชำระเงินสด</option></select></label><div className="contract-preview"><div className="contract-preview-top"><span>{Number(contractInterest) === 0 ? "ประมาณการแบบไม่คิดดอกเบี้ย" : "ประมาณการแบบลดต้นลดดอก"}</span><span className="preview-chip">ตัวอย่าง</span></div><div className="contract-preview-main"><span>ยอดชำระต่อเดือน</span><b>฿{money(contractPreviewPayment)}<small> / เดือน</small></b></div><div className="contract-preview-details"><span>เงินต้น ฿{money(Number(contractAmount || 0))}</span><i /><span>{contractInstallments || 0} งวด</span><i /><span>รวม ฿{money(contractPreviewPayment * Number(contractInstallments || 0))}</span></div><small className="contract-disclaimer">ยอดจริงอาจเปลี่ยนตามวิธีคำนวณและวันที่ทำสัญญา กรุณาตรวจสอบเงื่อนไขก่อนให้ผู้กู้ลงนาม</small></div><label className="contract-consent"><input type="checkbox" required /> <span>ยืนยันว่าตรวจสอบวงเงิน อัตราดอกเบี้ย และกำหนดชำระแล้ว</span></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button><button type="submit" className="primary-button"><Icon name="file" size={16} /> บันทึกสัญญาฉบับร่าง</button></div><div className="contract-footnote">ระบบจะบันทึกสัญญาเป็น “รอลงนาม” และยังไม่เริ่มนับงวดชำระ</div></form>}</div></div>}
-
+      {modal === "loan" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal loan-request-modal" role="dialog" aria-modal="true" aria-labelledby="loan-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สร้างรายการใหม่ · ขั้นตอน {loanStep} จาก 2</span><h2 id="loan-title">สร้างคำขอกู้ยืม</h2><p>{loanStep === 1 ? "เลือกผู้กู้จากทะเบียน borrowers เพื่อใช้อ้างอิงข้อมูล" : "ระบุวัตถุประสงค์และวงเงินคำขอ"}</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div><div className="loan-step-track"><span className={loanStep === 1 ? "active" : "complete"}>01 <b>เลือกผู้กู้</b></span><i /><span className={loanStep === 2 ? "active" : ""}>02 <b>รายละเอียดคำขอ</b></span></div>{loanStep === 1 ? <div className="loan-step-content"><div className="loan-section-label"><span>01</span> เลือกจากทะเบียนผู้กู้</div>{loanBorrowersLoading ? <div className="loan-borrower-empty">กำลังโหลดทะเบียนผู้กู้…</div> : memberList.length === 0 ? <div className="loan-borrower-empty"><b>ยังไม่มีข้อมูลผู้กู้ในทะเบียน</b><span>เพิ่มหรือนำเข้ารายชื่อใน Borrowers ก่อน แล้วจึงเริ่มสร้างคำขอกู้ยืม</span><button type="button" className="secondary-button" onClick={() => { setModal(null); router.push("/borrowers"); }}>ไปที่ Borrowers <Icon name="arrow" size={15} /></button></div> : <><label>ค้นหาและเลือกผู้กู้<select value={borrowerChoice} onChange={(event) => setBorrowerChoice(event.target.value)} required>{memberList.map((member) => <option key={member.id ?? member.name} value={member.id ?? member.name}>{member.name}{member.employeeCode ? ` · ${member.employeeCode}` : ""}</option>)}</select></label>{selectedLoanBorrower && <div className="loan-borrower-card"><MemberAvatar member={selectedLoanBorrower} /><div><b>{selectedLoanBorrower.name}</b><span>{selectedLoanBorrower.employeeCode ? `รหัสสมาชิก ${selectedLoanBorrower.employeeCode}` : "ผู้กู้ในทะเบียน"}</span><small>เบอร์โทรศัพท์ · {selectedLoanBorrower.phone || "ยังไม่ได้ระบุ"}</small></div><span className="loan-reference-badge"><Icon name="check" size={13} /> ข้อมูลอ้างอิง</span></div>}<div className="loan-step-hint"><Icon name="people" size={15} /> คำขอและสัญญาจะอ้างอิงข้อมูลผู้กู้จากทะเบียนนี้</div></>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button><button type="button" className="primary-button" disabled={loanBorrowersLoading || !selectedLoanBorrower} onClick={() => setLoanStep(2)}>ถัดไป: รายละเอียดคำขอ <Icon name="arrow" size={16} /></button></div></div> : <form onSubmit={createLoan}><div className="loan-selected-borrower"><MemberAvatar member={selectedLoanBorrower!} /><div><small>ผู้กู้จากทะเบียน</small><b>{selectedLoanBorrower?.name}</b><span>{selectedLoanBorrower?.phone || "ไม่มีเบอร์โทรศัพท์ในทะเบียน"}</span></div><button type="button" onClick={() => setLoanStep(1)}>เปลี่ยน</button></div><div className="loan-section-label"><span>02</span> รายละเอียดคำขอ</div><div className="loan-focus-grid">{loanFocusOptions.map((option) => <button type="button" className={`loan-focus-option ${loanPurpose === option.value ? "selected" : ""}`} key={option.value} onClick={() => setLoanPurpose(option.value)}><span className="loan-focus-icon"><Icon name={option.icon} size={19} /></span><span><b>{option.title}</b><small>{option.detail}</small></span>{loanPurpose === option.value && <span className="loan-focus-check"><Icon name="check" size={15} /></span>}</button>)}</div><div className="form-row"><label>วงเงินที่ต้องการ (บาท)<input name="amount" required type="number" min="1000" max={loanLimit} placeholder="10,000" /><small>วงเงินสูงสุด ฿{money(Number(loanLimit))}</small></label><label>จำนวนงวด<select name="term" defaultValue="6"><option value="3">3 งวด</option><option value="6">6 งวด</option><option value="10">10 งวด</option><option value="12">12 งวด</option></select></label></div><label>หมายเหตุ<textarea name="note" rows={3} placeholder="รายละเอียดเพิ่มเติม เช่น รายการค่าใช้จ่าย" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setLoanStep(1)}>ย้อนกลับ</button><button type="submit" className="primary-button" disabled={!loanPurpose}>บันทึกคำขอ <Icon name="arrow" size={16} /></button></div></form>}</div></div>}
+      {modal === "contract" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-title" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head"><div><span className="drawer-kicker">จัดการสินเชื่อ · สร้างจากคำขอที่อนุมัติ</span><h2 id="contract-title">สร้างสัญญายืมเงิน</h2><p>{contractStep === 1 ? "เลือกใบคำขอที่ผ่านการอนุมัติ" : contractStep === 2 ? "กำหนดรูปแบบสัญญาและเงื่อนไขชำระ" : "ตรวจสอบข้อมูลทั้งหมดก่อนบันทึกสัญญา"}</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div>
+        <div className="loan-step-track contract-step-track"><span className={contractStep === 1 ? "active" : "complete"}>01 <b>ใบคำขอ</b></span><i /><span className={contractStep === 2 ? "active" : contractStep === 3 ? "complete" : ""}>02 <b>เงื่อนไข</b></span><i /><span className={contractStep === 3 ? "active" : ""}>03 <b>ตรวจทาน</b></span></div>
+        {eligibleLoans.length === 0 ? <div className="contract-empty"><span className="contract-empty-icon"><Icon name="check" /></span><b>ยังไม่มีคำขอที่พร้อมทำสัญญา</b><span>คำขอต้องได้รับอนุมัติก่อน จึงจะสร้างสัญญาได้</span><button className="secondary-button" onClick={() => { setModal(null); router.push("/loans/review"); }}>ไปที่คำขอกู้ยืม</button></div> : <form onSubmit={createContract}>
+          <input type="hidden" name="firstDueOn" value={contractFirstDueOn} />
+          <input type="hidden" name="repaymentMethod" value={contractRepaymentMethod} />
+          {contractStep === 1 && <div className="contract-step-content"><div className="contract-section-label"><span>01</span> เลือกใบคำขอ</div><label>เลขที่ใบคำขอ<select value={contractLoanId} onChange={(event) => { const loan = loans.find((item) => item.id === event.target.value); setContractLoanId(event.target.value); if (loan) { setContractAmount(String(loan.amount)); setContractInstallments(String(loan.term)); } }} required>{eligibleLoans.map((loan) => <option key={loan.id} value={loan.id}>{loan.id} · {loan.name} · ฿{money(loan.amount)}</option>)}</select></label>{selectedContractLoan && <div className="contract-member-card"><div className={`person-avatar ${selectedContractLoan.color}`}>{selectedContractLoan.initials}</div><div><b>{selectedContractLoan.name}</b><span>{selectedContractLoan.team} · {selectedContractLoan.purpose}</span></div><Status value={selectedContractLoan.status} /></div>}<div className="contract-step-hint"><Icon name="check" size={15} /> เลือกได้เฉพาะใบคำขอที่อนุมัติแล้วและยังไม่มีสัญญา</div></div>}
+          {contractStep === 2 && <div className="contract-step-content"><div className="contract-section-label"><span>02</span> กำหนดเงื่อนไขสัญญา</div><div className="contract-selected-summary"><span>ใบคำขอ {selectedContractLoan?.id}</span><b>{selectedContractLoan?.name}</b></div><div className="form-row"><label>เงินต้น (บาท)<input type="number" min="1" max={Math.min(Number(loanLimit), selectedContractLoan?.amount ?? 0)} value={contractAmount} onChange={(event) => setContractAmount(event.target.value)} required /><small>อนุมัติไว้ ฿{money(selectedContractLoan?.amount ?? 0)}</small></label><label>จำนวนงวด<input type="number" min="1" max="36" value={contractInstallments} onChange={(event) => setContractInstallments(event.target.value)} required /><small>แบ่งชำระรายเดือน</small></label></div><div className="form-row"><div className="contract-rate-picker"><label>รูปแบบดอกเบี้ย<select className="contract-rate-select" value={customContractInterest ? "custom" : contractInterest} onChange={(event) => { const value = event.target.value; if (value === "custom") setCustomContractInterest(true); else { setContractInterest(value); setCustomContractInterest(false); } }}><option value="0">ไม่ตัดดอก · 0%</option>{["5", "10", "15", "20", "25"].map((rate) => <option key={rate} value={rate}>ตัดดอก · ลดต้นลดดอก {rate}% ต่อปี</option>)}<option value="custom">ตัดดอก · กำหนดอัตราเอง</option></select></label>{customContractInterest && <label>ระบุอัตราดอกเบี้ยต่อปี (%)<input type="number" min="0" max="100" step="0.01" value={contractInterest} onChange={(event) => setContractInterest(event.target.value)} required /></label>}<small>{Number(contractInterest) === 0 ? "แบ่งชำระเงินต้นเท่ากัน โดยไม่มีดอกเบี้ย" : "คิดดอกเบี้ยจากเงินต้นคงเหลือในแต่ละงวด"}</small></div><label>วันครบกำหนดงวดแรก<input type="date" value={contractFirstDueOn} onChange={(event) => setContractFirstDueOn(event.target.value)} required /><small>งวดถัดไปครบกำหนดวันเดียวกันของเดือน</small></label></div><label>วิธีชำระ<select value={contractRepaymentMethod} onChange={(event) => setContractRepaymentMethod(event.target.value)}><option>หักเงินเดือน</option><option>โอนเงินผ่านธนาคาร</option><option>ชำระเงินสด</option></select></label></div>}
+          {contractStep === 3 && <div className="contract-step-content"><div className="contract-section-label"><span>03</span> ตรวจสอบรายละเอียด</div><div className="contract-review-card"><div className="contract-review-heading"><div><small>เลขที่ใบคำขอ</small><b>{selectedContractLoan?.id ?? "—"}</b></div><span className="status status-pending"><Icon name="clock" size={13} /> รอลงนาม</span></div><div className="contract-review-grid"><div><small>ชื่อลูกค้า</small><b>{selectedContractLoan?.name ?? "—"}</b></div><div><small>เลขที่สัญญา</small><b>ออกให้อัตโนมัติเมื่อบันทึก</b></div><div><small>รูปแบบสัญญา</small><b>{Number(contractInterest) === 0 ? "ไม่ตัดดอก" : "ตัดดอก · ลดต้นลดดอก"}</b></div><div><small>อัตราดอกเบี้ย</small><b>{Number(contractInterest)}% ต่อปี</b></div><div><small>วันครบกำหนดงวดแรก</small><b>{new Date(`${contractFirstDueOn}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })}</b></div><div><small>วิธีชำระ</small><b>{contractRepaymentMethod}</b></div></div><div className="contract-review-totals"><div><span>เงินต้น</span><b>฿{money(Number(contractAmount || 0))}</b></div><div><span>ดอกเบี้ยรวมโดยประมาณ</span><b>฿{money(contractPreviewInterest)}</b></div><div className="total"><span>ยอดรวมโดยประมาณ</span><b>฿{money(contractPreviewTotal)}</b></div><div><span>ยอดชำระต่อเดือนโดยประมาณ</span><b>฿{money(contractPreviewPayment)}</b></div></div></div><small className="contract-disclaimer">ยอดจริงและตารางชำระจะคำนวณตามวันครบกำหนดและเงื่อนไขในสัญญา</small><label className="contract-consent"><input type="checkbox" required /> <span>ยืนยันว่าตรวจสอบข้อมูลและเงื่อนไขสัญญาแล้ว</span></label></div>}
+          <div className="modal-actions contract-step-actions">{contractStep === 1 ? <button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button> : <button type="button" className="secondary-button" onClick={() => setContractStep((step) => step === 3 ? 2 : 1)}><Icon name="arrow" size={15} /> ย้อนกลับ</button>}{contractStep < 3 ? <button type="button" className="primary-button" onClick={continueContractStep}>ถัดไป <Icon name="arrow" size={16} /></button> : <button type="submit" className="primary-button"><Icon name="file" size={16} /> บันทึกสัญญาฉบับร่าง</button>}</div>
+          {contractStep === 3 && <div className="contract-footnote">ระบบจะออกเลขสัญญาและบันทึกสถานะ “รอลงนาม” หลังยืนยัน</div>}
+        </form>}
+      </div></div>}
       {modal === "member" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal member-modal" role="dialog" aria-modal="true" aria-labelledby="member-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สมาชิก · {editingMember ? "แก้ไขข้อมูล" : "เพิ่มรายชื่อ"}</span><h2 id="member-title">{editingMember ? "แก้ไขสมาชิก" : "เพิ่มสมาชิก"}</h2><p>ข้อมูลบัตรประชาชน รูปถ่าย และที่อยู่จะเห็นได้เฉพาะผู้ดูแลระบบ</p></div><button className="icon-button" onClick={() => { setModal(null); setEditingMember(null); }} aria-label="ปิด"><Icon name="close" /></button></div><button type="button" className="secondary-button member-card-reader-trigger" onClick={readCardIntoMemberForm} disabled={memberCardReading}><Icon name={memberCardReading ? "clock" : "card"} size={15} />{memberCardReading ? "กำลังอ่านบัตร…" : "อ่านข้อมูลและรูปจากบัตร"}</button><form ref={memberFormRef} key={editingMember?.id ?? "new-member"} onSubmit={createMember}><input type="hidden" name="photoData" value={memberPhotoData} readOnly />{memberPhotoData && <div className="member-card-photo-preview"><img src={`data:image/jpeg;base64,${memberPhotoData}`} alt={`รูปจากบัตรของ ${editingMember?.name || "สมาชิก"}`} /><span>รูปถ่ายจากชิปบัตร · ตรวจทานก่อนบันทึก</span></div>}<div className="form-row"><label>ชื่อและนามสกุล<input name="memberName" required defaultValue={editingMember?.name || ""} placeholder="กรอกชื่อตามบัตรประชาชน" /></label><label>รหัสสมาชิก<input name="employeeCode" defaultValue={editingMember?.employeeCode ?? ""} placeholder="เว้นว่างเพื่อสร้างรหัสอัตโนมัติ" /></label></div><div className="form-row"><label>ชื่อเล่น<input name="nickname" defaultValue={editingMember?.nickname ?? ""} /></label><label>แผนก<input name="team" defaultValue={editingMember?.team ?? ""} placeholder="เช่น ฝ่ายผลิต" /></label></div><label>เบอร์โทรศัพท์<input name="phone" type="tel" defaultValue={editingMember?.phone ?? ""} /></label><details className="member-extra-fields" open={memberDetailsOpen} onToggle={(event) => setMemberDetailsOpen(event.currentTarget.open)}><summary>ข้อมูลอ้างอิงจากบัตรประชาชน</summary><p className="member-extra-hint">ตรวจทานข้อมูลที่อ่านได้ก่อนบันทึก · ทุกช่องไม่บังคับกรอก</p><div className="form-row"><label>เลขประจำตัวประชาชน<input name="nationalId" inputMode="numeric" autoComplete="off" maxLength={13} defaultValue={editingMember?.nationalId || ""} placeholder="เลข 13 หลัก" /><small>เก็บเฉพาะเพื่อใช้อ้างอิงข้อมูลสมาชิก</small></label><label>วันเกิด<input name="dateOfBirth" placeholder="YYYY-MM-DD" autoComplete="bday" defaultValue={editingMember?.dateOfBirth || ""} /><small>ใช้รูปแบบปี ค.ศ. เช่น 1987-05-14</small></label></div><label>ที่อยู่ตามบัตร<textarea name="address" rows={2} autoComplete="street-address" defaultValue={editingMember?.address || ""} placeholder="บ้านเลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด และรหัสไปรษณีย์" /></label></details><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setModal(null); setEditingMember(null); }}>ยกเลิก</button><button type="submit" className="primary-button">{editingMember ? "บันทึกการแก้ไข" : "บันทึกสมาชิก"} <Icon name="check" size={16} /></button></div></form></div></div>}
 
-      {toast && <Toast toast={toast} onDismiss={dismissToast} />}
     </main>
   );
 }

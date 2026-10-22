@@ -11,7 +11,6 @@ type MenuGroup = { category: string; items: MenuItem[] };
 type SidebarProps = {
   activeNav: string;
   currentUser: CurrentUser;
-  companyName: string;
   mobileMenu: boolean;
   pendingApprovalCount: number;
   onCloseMobileMenu: () => void;
@@ -27,6 +26,7 @@ const menuGroups: MenuGroup[] = [
   { category: "ติดตามรับชำระ", items: [{ label: "ตารางงวด", icon: "calendar", href: "/repayments/schedule" }, { label: "ค้างชำระ", icon: "clock", href: "/repayments/overdue" }] },
   { category: "การเงินและรายงาน", items: [{ label: "รายรับรายจ่าย", icon: "book", href: "/accounting/ledger" }, { label: "ผลดำเนินงาน", icon: "chart", href: "/reports/performance" }] },
   { category: "ระบบ", items: [{ label: "ตั้งค่าระบบ", icon: "settings", href: "/settings" }] },
+  { category: "Masterdata", items: [{ label: "รหัสไปรษณีย์", icon: "database", href: "/admin/masterdata" }] },
 ];
 
 export const navByPath: Record<string, string> = {
@@ -41,9 +41,11 @@ export const navByPath: Record<string, string> = {
   "/accounting/ledger": "รายรับรายจ่าย",
   "/reports/performance": "ผลดำเนินงาน",
   "/settings": "ตั้งค่าระบบ",
+  "/settings/masterdata/postcode": "รหัสไปรษณีย์",
+  "/admin/masterdata": "รหัสไปรษณีย์",
 };
 
-export function Sidebar({ activeNav, currentUser, companyName, mobileMenu, pendingApprovalCount, onCloseMobileMenu, onNavigate, onLogout, onNotify }: SidebarProps) {
+export function Sidebar({ activeNav, currentUser, mobileMenu, pendingApprovalCount, onCloseMobileMenu, onNavigate, onLogout, onNotify }: SidebarProps) {
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const displayName = currentUser?.displayName ?? currentUser?.username ?? "กำลังโหลดบัญชี";
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "A";
@@ -55,11 +57,6 @@ export function Sidebar({ activeNav, currentUser, companyName, mobileMenu, pendi
         <div className="brand-mark"><span /><span /><span /></div>
         <div><b>ใจดี</b><small>LOAN MANAGEMENT</small></div>
         <button className="mobile-close" onClick={onCloseMobileMenu} aria-label="ปิดเมนู"><Icon name="close" /></button>
-      </div>
-      <div className="workspace">
-        <div className="workspace-avatar">L</div>
-        <div className="workspace-copy"><b>{companyName}</b><small>พื้นที่ทำงานของบริษัท</small></div>
-        <span className="workspace-chevron">⌄</span>
       </div>
       <nav className="main-nav" aria-label="เมนูตามประเภท">
         {menuGroups.map((group) => (

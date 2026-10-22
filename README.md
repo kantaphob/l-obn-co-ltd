@@ -23,9 +23,10 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 1. คัดลอก `.env.example` เป็น `.env.local`
 2. กำหนด `ADMIN_USERNAME` และ `ADMIN_PASSWORD` เป็นค่าที่คุณเลือก
 3. กำหนด `SESSION_SECRET` เป็นค่าสุ่มยาวอย่างน้อย 32 ตัวอักษร (เช่น `openssl rand -base64 32`)
-4. เริ่มแอปด้วย `npm run dev` แล้วเข้าสู่ระบบที่ `/login`
+4. บันทึกบัญชีผู้ดูแลและสิทธิ์เต็มลงฐานข้อมูลด้วย `npm run db:admin`
+5. เริ่มแอปด้วย `npm run dev` แล้วเข้าสู่ระบบที่ `/login`
 
-เซสชันลงนามด้วย HMAC และเก็บใน HttpOnly cookie โดยหมดอายุใน 7 วัน การเข้าใช้งานหน้าแอปจะถูกตรวจสอบที่ Proxy ของ Next.js
+ระบบเก็บรหัสผ่านเป็น scrypt hash ในตาราง `users` และกำหนดสิทธิ์ `*` ผ่าน `roles`/`role_permissions` เซสชันอายุ 7 วันถูกบันทึกในฐานข้อมูลและ cookie แบบ HttpOnly; การออกจากระบบจะเพิกถอนเซสชันในฐานข้อมูลด้วย
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

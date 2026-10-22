@@ -4,29 +4,870 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
+// สถานะการเปิดใช้งานบัญชีของผู้กู้
+enum BorrowerStatus {
+  // ใช้งานได้ตามปกติ
+  ACTIVE
+  // ปิดการใช้งานชั่วคราว
+  INACTIVE
+  // ระงับการใช้งานระหว่างตรวจสอบ
+  SUSPENDED
+  // ระงับถาวรหรือห้ามใช้บริการ
+  BLOCKED
+  // ปิดความสัมพันธ์กับผู้กู้แล้ว
+  CLOSED
+}
+
+// ประเภทการตรวจสอบข้อมูลผู้กู้
+enum VerificationType {
+  // ตรวจสอบตัวตน
+  IDENTITY
+  // ตรวจสอบที่อยู่
+  ADDRESS
+  // ตรวจสอบรายได้
+  INCOME
+}
+
+// ผลและขั้นตอนการตรวจสอบข้อมูล
+enum VerificationStatus {
+  // รอตรวจสอบ
+  PENDING
+  // อยู่ระหว่างตรวจสอบ
+  IN_REVIEW
+  // ตรวจสอบผ่าน
+  VERIFIED
+  // ตรวจสอบไม่ผ่าน
+  REJECTED
+  // ผลตรวจสอบหมดอายุ
+  EXPIRED
+}
+
+// สถานะคำขอสินเชื่อตั้งแต่ร่างจนสิ้นสุดการพิจารณา
+enum LoanApplicationStatus {
+  // กำลังกรอกคำขอ
+  DRAFT
+  // ส่งคำขอแล้ว
+  SUBMITTED
+  // เจ้าหน้าที่กำลังพิจารณา
+  UNDER_REVIEW
+  // ต้องส่งข้อมูลเพิ่มเติม
+  MORE_INFO_REQUIRED
+  // อนุมัติคำขอ
+  APPROVED
+  // ไม่อนุมัติคำขอ
+  REJECTED
+  // ผู้กู้ถอนคำขอ
+  WITHDRAWN
+  // คำขอหมดอายุ
+  EXPIRED
+}
+
+// สถานะสัญญาเงินกู้
+enum LoanContractStatus {
+  // กำลังจัดทำสัญญา
+  DRAFT
+  // รอลงนาม
+  PENDING_SIGNATURE
+  // สัญญามีผลและกำลังชำระ
+  ACTIVE
+  // ชำระครบแล้ว
+  PAID_OFF
+  // ผิดนัดชำระ
+  DEFAULTED
+  // ปรับโครงสร้างหนี้แล้ว
+  RESTRUCTURED
+  // ยกเลิกสัญญา
+  CANCELLED
+}
+
+// สถานะงวดชำระหนี้
+enum InstallmentStatus {
+  // ยังไม่ถึงกำหนด
+  UPCOMING
+  // ถึงกำหนดชำระ
+  DUE
+  // ชำระแล้วบางส่วน
+  PARTIAL
+  // ชำระครบแล้ว
+  PAID
+  // เลยกำหนดชำระ
+  OVERDUE
+  // ยกเว้นการชำระ
+  WAIVED
+}
+
+// สถานะรายการรับชำระ
+enum PaymentStatus {
+  // รอยืนยันรายการ
+  PENDING
+  // ยืนยันรับชำระแล้ว
+  CONFIRMED
+  // รับชำระไม่สำเร็จ
+  FAILED
+  // ย้อนรายการรับชำระ
+  REVERSED
+}
+
+// ช่องทางรับชำระเงิน
+enum PaymentMethod {
+  // เงินสด
+  CASH
+  // โอนเงินผ่านธนาคาร
+  BANK_TRANSFER
+  // ชำระด้วย QR
+  QR_PAYMENT
+  // หักบัญชีอัตโนมัติ
+  DIRECT_DEBIT
+  // ช่องทางอื่น
+  OTHER
+}
+
+// ประเภทเอกสารประกอบของผู้กู้
+enum DocumentType {
+  // บัตรประจำตัวประชาชน
+  NATIONAL_ID
+  // ทะเบียนบ้าน
+  HOUSE_REGISTRATION
+  // สลิปเงินเดือน
+  PAYSLIP
+  // รายการเดินบัญชีธนาคาร
+  BANK_STATEMENT
+  // เอกสารประเภทอื่น
+  OTHER
+}
+
+// สถานะการตรวจเอกสาร
+enum DocumentStatus {
+  // อัปโหลดแล้ว
+  UPLOADED
+  // อยู่ระหว่างตรวจ
+  UNDER_REVIEW
+  // ตรวจผ่าน
+  ACCEPTED
+  // ตรวจไม่ผ่าน
+  REJECTED
+  // เอกสารหมดอายุ
+  EXPIRED
+}
+
+// ประเภทการรับทราบหรือขอความยินยอม
+enum ConsentType {
+  // ประกาศความเป็นส่วนตัว
+  PRIVACY_NOTICE
+  // ตรวจสอบข้อมูลเครดิต
+  CREDIT_CHECK
+  // ข้อกำหนดและเงื่อนไข
+  TERMS_AND_CONDITIONS
+  // ลายมือชื่ออิเล็กทรอนิกส์
+  ELECTRONIC_SIGNATURE
+  // การเปิดเผยข้อมูลแก่บุคคลอื่น
+  DATA_SHARING
+}
+
+// การตัดสินใจต่อความยินยอมหรือการรับทราบ
+enum ConsentDecision {
+  // ยินยอมหรือรับทราบ
+  ACCEPTED
+  // ปฏิเสธ
+  DECLINED
+  // ถอนความยินยอมภายหลัง
+  WITHDRAWN
+}
+
+// บัญชีสำหรับเข้าสู่ระบบและผูกกับบทบาทสิทธิ์
 model User {
-  id          Int          @id @default(autoincrement())
-  acccode     String       @unique
-  username    String       @unique
-  password    String
-  Level       Int
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  userProfile UserProfile?
+  // รหัสบัญชีผู้ใช้
+  id               Int                    @id @default(autoincrement())
+  // รหัสบัญชีภายในระบบ
+  acccode          String                 @unique
+  // ชื่อที่ใช้เข้าสู่ระบบ
+  username         String                 @unique
+  // รหัสผ่านที่จัดเก็บในรูปแบบแฮช
+  password         String
+  // รหัสบทบาทและสิทธิ์ของผู้ใช้
+  roleId           Int
+  // วันเวลาที่สร้างบัญชี
+  createdAt        DateTime               @default(now())
+  // วันเวลาที่แก้ไขบัญชีล่าสุด
+  updatedAt        DateTime               @updatedAt
+  // ข้อมูลส่วนบุคคลของบัญชีนี้
+  userProfile      UserProfile?
+  // ข้อมูลผู้กู้ที่เชื่อมกับบัญชีนี้
+  borrower         BorrowerProfile?
+  // บทบาทของบัญชีนี้
+  role             Role                   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  // เซสชันเข้าสู่ระบบของบัญชีนี้
+  sessions         Session[]
+  // รายการตรวจสอบที่ผู้ใช้นี้เป็นผู้ตรวจ
+  reviews          BorrowerVerification[] @relation("VerificationReviewer")
+  // รายการรับชำระที่ผู้ใช้นี้บันทึก
+  recordedPayments LoanPayment[]          @relation("PaymentRecorder")
+
+  @@index([roleId])
+  @@map("users")
 }
 
-model UserProfile {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @unique
+model Organization {
+  id        String                @id
   name      String
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+  settings  OrganizationSetting[]
+
+  @@map("organizations")
+}
+
+model OrganizationSetting {
+  id             Int          @id @default(autoincrement())
+  organizationId String       @map("organization_id")
+  settingKey     String       @map("setting_key")
+  settingValue   String       @map("setting_value")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, settingKey])
+  @@map("organization_settings")
+}
+
+// ตัวนับเลขเอกสาร แยกตามขอบเขต ชุดเลข และรอบเวลา
+model NumberSequence {
+  // รหัสตัวนับเลขเอกสาร
+  id           Int      @id @default(autoincrement())
+  // ขอบเขตการแยกชุดเลข เช่น องค์กร
+  scope        String   @default("default")
+  // ประเภทเอกสารที่กำลังนับเลข
+  series       String
+  // รอบเวลาของชุดเลข เช่น ปีหรือ ALL
+  period       String   @default("ALL")
+  // เลขลำดับล่าสุดที่จ่ายให้เอกสาร
+  currentValue Int      @default(0) @map("current_value")
+  // วันเวลาที่สร้างชุดเลข
+  createdAt    DateTime @default(now()) @map("created_at")
+  // วันเวลาที่ปรับปรุงชุดเลขล่าสุด
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([scope, series, period])
+  @@map("number_sequences")
+}
+
+// ข้อมูลผู้ให้กู้หรือเจ้าหนี้ขององค์กร
+model Lender {
+  // รหัสผู้ให้กู้
+  id              String    @id @default(uuid())
+  // รหัสองค์กรเจ้าของข้อมูล
+  organizationId  String    @map("organization_id")
+  // เลขประจำตัวผู้ให้กู้ภายในองค์กร
+  lenderNo        String    @map("lender_no")
+  // เลขประจำตัวประชาชน
+  nationalId      String    @map("national_id")
+  // ชื่อและนามสกุลภาษาไทย
+  fullName        String    @map("full_name")
+  // ชื่อและนามสกุลภาษาอังกฤษ
+  nameEn          String?   @map("name_en")
+  // วันเกิด
+  dateOfBirth     String?   @map("date_of_birth")
+  // เพศ
+  gender          String?
+  // ที่อยู่โดยรวม
+  address         String?
+  // เลขที่บ้าน
+  houseNumber     String?   @map("house_number")
+  // ตรอกหรือซอย
+  soi             String?
+  // ถนน
+  road            String?
+  // รหัสตำบลหรือแขวง
+  subdistrictCode String?   @map("subdistrict_code")
+  // ชื่อตำบลหรือแขวง
+  subdistrict     String?
+  // รหัสอำเภอหรือเขต
+  districtCode    String?   @map("district_code")
+  // ชื่ออำเภอหรือเขต
+  district        String?
+  // รหัสจังหวัด
+  provinceCode    String?   @map("province_code")
+  // ชื่อจังหวัด
+  province        String?
+  // รหัสไปรษณีย์
+  postcode        String?
+  // หน่วยงานที่ออกบัตร
+  cardIssuer      String?   @map("card_issuer")
+  // วันที่ออกบัตร
+  cardIssuedOn    String?   @map("card_issued_on")
+  // วันที่บัตรหมดอายุ
+  cardExpiresOn   String?   @map("card_expires_on")
+  // ข้อมูลภาพประจำตัวตามรูปแบบที่ระบบจัดเก็บ
+  photoData       String?   @map("photo_data")
+  // แหล่งที่มาของข้อมูลผู้ให้กู้
+  source          String    @default("manual")
+  // วันเวลาที่ยืนยันตัวตนสำเร็จ
+  kycVerifiedAt   DateTime? @map("kyc_verified_at")
+  // วิธีที่ใช้ยืนยันตัวตน
+  kycMethod       String?   @map("kyc_method")
+  // สถานะผู้ให้กู้
+  status          String    @default("active")
+  // วันเวลาที่สร้างข้อมูล
+  createdAt       DateTime  @default(now()) @map("created_at")
+  // วันเวลาที่แก้ไขข้อมูลล่าสุด
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@unique([organizationId, lenderNo])
+  @@unique([organizationId, nationalId])
+  @@index([organizationId, fullName])
+  @@map("lenders")
+}
+
+// ประเภทผู้ใช้งาน เช่น ผู้ดูแลระบบหรือเจ้าหน้าที่
+model Role {
+  // รหัสบทบาท
+  id          Int              @id @default(autoincrement())
+  // รหัสเรียกบทบาทที่ไม่ซ้ำกัน
+  code        String           @unique
+  // ชื่อบทบาทที่แสดงในระบบ
+  name        String
+  // คำอธิบายหน้าที่ของบทบาท
+  description String?
+  // วันเวลาที่สร้างบทบาท
+  createdAt   DateTime         @default(now())
+  // วันเวลาที่แก้ไขบทบาทล่าสุด
+  updatedAt   DateTime         @updatedAt
+  // บัญชีผู้ใช้ที่ได้รับบทบาทนี้
+  users       User[]
+  // สิทธิ์ที่กำหนดให้บทบาทนี้
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+// สิทธิ์แต่ละรายการที่กำหนดให้กับบทบาท
+model RolePermission {
+  // รหัสรายการสิทธิ์
+  id         Int      @id @default(autoincrement())
+  // รหัสบทบาทที่ได้รับสิทธิ์
+  roleId     Int
+  // รหัสสิทธิ์ที่อนุญาต
+  permission String
+  // วันเวลาที่กำหนดสิทธิ์
+  createdAt  DateTime @default(now())
+  // บทบาทที่เป็นเจ้าของสิทธิ์นี้
+  role       Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permission])
+  @@map("role_permissions")
+}
+
+// ข้อมูลส่วนบุคคลที่แสดงของบัญชีผู้ใช้งาน
+model UserProfile {
+  // รหัสข้อมูลโปรไฟล์
+  id        Int      @id @default(autoincrement())
+  // รหัสบัญชีผู้ใช้ที่เป็นเจ้าของโปรไฟล์
+  userId    Int      @unique
+  // ชื่อ
+  name      String
+  // นามสกุล
   surname   String
+  // อีเมลติดต่อ
   email     String   @unique
+  // หมายเลขโทรศัพท์ติดต่อ
   phone     String   @unique
+  // วันเวลาที่สร้างโปรไฟล์
   createdAt DateTime @default(now())
+  // วันเวลาที่แก้ไขโปรไฟล์ล่าสุด
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  // บัญชีผู้ใช้ที่เชื่อมกับโปรไฟล์นี้
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+// เซสชันที่ใช้ยืนยันการเข้าสู่ระบบของผู้ใช้
+model Session {
+  // รหัสเซสชัน
+  id        Int       @id @default(autoincrement())
+  // รหัสบัญชีเจ้าของเซสชัน
+  userId    Int
+  // ค่าแฮชของโทเคนเซสชัน
+  tokenHash String    @unique
+  // วันเวลาหมดอายุของเซสชัน
+  expiresAt DateTime
+  // วันเวลาที่ยกเลิกเซสชัน (ว่างเมื่อยังไม่ยกเลิก)
+  revokedAt DateTime?
+  // วันเวลาที่สร้างเซสชัน
+  createdAt DateTime  @default(now())
+  // บัญชีเจ้าของเซสชัน
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@map("sessions")
+}
+
+// ข้อมูลประจำตัวและช่องทางติดต่อของผู้กู้
+model BorrowerProfile {
+  // รหัสข้อมูลผู้กู้
+  id              Int                    @id @default(autoincrement())
+  // เลขทะเบียนผู้กู้ภายในระบบ
+  borrowerNo      String?                @unique @map("borrower_no")
+  // ข้อมูลเสริมที่ใช้ในทะเบียนสมาชิกของบริษัท
+  nickname        String?
+  departmentName  String?                @map("department_name")
+  // รหัสบัญชีผู้ใช้ที่เชื่อมกับผู้กู้ (ไม่บังคับ)
+  userId          Int?                   @unique
+  // เลขประจำตัวประชาชนผู้กู้
+  nationalId      String?                @unique
+  // ชื่อผู้กู้
+  name            String
+  // นามสกุลผู้กู้
+  surname         String
+  // ชื่อและนามสกุลภาษาอังกฤษจากบัตร
+  nameEn          String?                @map("name_en")
+  // วันเกิดผู้กู้
+  birthDate       DateTime?
+  // เพศจากบัตร
+  gender          String?
+  // หมายเลขโทรศัพท์ผู้กู้
+  phone           String?
+  // อีเมลผู้กู้
+  email           String?
+  // ที่อยู่ผู้กู้
+  address         String?
+  // เลขที่บ้าน
+  houseNumber     String?                @map("house_number")
+  // ตรอกหรือซอย
+  soi             String?
+  // ถนน
+  road            String?
+  // รหัสตำบลหรือแขวง
+  subdistrictCode String?                @map("subdistrict_code")
+  // จังหวัดที่อยู่
+  province        String?
+  // รหัสอำเภอหรือเขต
+  districtCode    String?                @map("district_code")
+  // อำเภอหรือเขตที่อยู่
+  district        String?
+  // รหัสจังหวัด
+  provinceCode    String?                @map("province_code")
+  // ตำบลหรือแขวงที่อยู่
+  subdistrict     String?
+  // รหัสไปรษณีย์ที่อยู่
+  postcode        String?
+  // หน่วยงานที่ออกบัตร
+  cardIssuer      String?                @map("card_issuer")
+  // วันออกบัตร
+  cardIssuedOn    String?                @map("card_issued_on")
+  // วันหมดอายุบัตร
+  cardExpiresOn   String?                @map("card_expires_on")
+  // รูปประจำตัวที่อ่านจากชิป
+  photoData       String?                @map("photo_data")
+  // แหล่งที่มาของข้อมูล เช่น manual หรือ ACS ACR39U
+  source          String                 @default("manual")
+  // วันเวลาที่ยืนยัน KYC สำเร็จ
+  kycVerifiedAt   DateTime?              @map("kyc_verified_at")
+  // วิธีที่ใช้ยืนยัน KYC
+  kycMethod       String?                @map("kyc_method")
+  // สถานะการใช้งานของผู้กู้
+  status          BorrowerStatus         @default(ACTIVE)
+  // วันเวลาที่สร้างข้อมูลผู้กู้
+  createdAt       DateTime               @default(now())
+  // วันเวลาที่แก้ไขข้อมูลผู้กู้ล่าสุด
+  updatedAt       DateTime               @updatedAt
+  // บัญชีผู้ใช้ที่เชื่อมกับข้อมูลผู้กู้
+  user            User?                  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  // รายการตรวจสอบข้อมูลของผู้กู้
+  verifications   BorrowerVerification[]
+  // คำขอสินเชื่อของผู้กู้
+  applications    LoanApplication[]
+  // สัญญาเงินกู้ของผู้กู้
+  contracts       LoanContract[]
+  // เอกสารของผู้กู้
+  documents       BorrowerDocument[]
+  // หลักฐานความยินยอมของผู้กู้
+  consents        ConsentRecord[]
+
+  @@index([status])
+  @@index([phone])
+  @@map("borrower_profiles")
+}
+
+// ประวัติการตรวจสอบตัวตน ที่อยู่ หรือรายได้ของผู้กู้
+model BorrowerVerification {
+  // รหัสรายการตรวจสอบ
+  id              Int                @id @default(autoincrement())
+  // รหัสผู้กู้ที่ถูกตรวจสอบ
+  borrowerId      Int
+  // ประเภทข้อมูลที่ตรวจสอบ
+  type            VerificationType
+  // ผลหรือขั้นตอนการตรวจสอบ
+  status          VerificationStatus @default(PENDING)
+  // วันเวลาที่ส่งข้อมูลตรวจสอบ
+  submittedAt     DateTime           @default(now())
+  // วันเวลาที่ตรวจสอบเสร็จ
+  reviewedAt      DateTime?
+  // รหัสผู้ใช้ที่ตรวจสอบ
+  reviewerUserId  Int?
+  // เหตุผลที่ไม่ผ่านการตรวจสอบ
+  rejectionReason String?
+  // เลขอ้างอิงจากแหล่งตรวจสอบ
+  reference       String?
+  // วันเวลาที่สร้างรายการตรวจสอบ
+  createdAt       DateTime           @default(now())
+  // วันเวลาที่แก้ไขรายการล่าสุด
+  updatedAt       DateTime           @updatedAt
+  // ผู้กู้ที่เป็นเจ้าของรายการตรวจสอบ
+  borrower        BorrowerProfile    @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  // ผู้ตรวจสอบรายการนี้
+  reviewer        User?              @relation("VerificationReviewer", fields: [reviewerUserId], references: [id], onDelete: SetNull)
+  // เอกสารประกอบการตรวจสอบ
+  documents       BorrowerDocument[]
+
+  @@index([borrowerId, type, status])
+  @@index([reviewerUserId])
+  @@map("borrower_verifications")
+}
+
+// คำขอสินเชื่อและผลการพิจารณาเบื้องต้น
+model LoanApplication {
+  // รหัสคำขอสินเชื่อ
+  id                    Int                   @id @default(autoincrement())
+  // เลขที่คำขอสินเชื่อ
+  applicationNo         String                @unique
+  // รหัสผู้ยื่นคำขอ
+  borrowerId            Int
+  // สถานะการพิจารณาคำขอ
+  status                LoanApplicationStatus @default(DRAFT)
+  // จำนวนเงินที่ขอกู้ หน่วยสตางค์
+  requestedAmountSatang BigInt
+  // จำนวนเงินที่อนุมัติ หน่วยสตางค์
+  approvedAmountSatang  BigInt?
+  // ระยะเวลาที่ขอกู้ หน่วยเดือน
+  requestedTermMonths   Int
+  // วัตถุประสงค์การกู้
+  purpose               String?
+  // วันเวลาที่ส่งคำขอ
+  submittedAt           DateTime?
+  // วันเวลาที่มีผลการพิจารณา
+  decidedAt             DateTime?
+  // บันทึกเหตุผลหรือรายละเอียดการพิจารณา
+  decisionNote          String?
+  // วันเวลาที่สร้างคำขอ
+  createdAt             DateTime              @default(now())
+  // วันเวลาที่แก้ไขคำขอล่าสุด
+  updatedAt             DateTime              @updatedAt
+  // ผู้กู้ที่ยื่นคำขอนี้
+  borrower              BorrowerProfile       @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  // สัญญาที่เกิดจากคำขอนี้
+  contract              LoanContract?
+  // เอกสารประกอบคำขอ
+  documents             BorrowerDocument[]
+
+  @@index([borrowerId, status])
+  @@index([status, createdAt])
+  @@map("loan_applications")
+}
+
+// สัญญาเงินกู้ วงเงิน อัตราดอกเบี้ย และช่วงเวลาสัญญา
+model LoanContract {
+  // รหัสสัญญาเงินกู้
+  id              Int                @id @default(autoincrement())
+  // เลขที่สัญญาเงินกู้
+  contractNo      String             @unique
+  // รหัสคำขอที่เป็นที่มาของสัญญา
+  applicationId   Int                @unique
+  // รหัสผู้กู้ตามสัญญา
+  borrowerId      Int
+  // สถานะสัญญา
+  status          LoanContractStatus @default(DRAFT)
+  // เงินต้นตามสัญญา หน่วยสตางค์
+  principalSatang BigInt
+  // อัตราดอกเบี้ย หน่วย basis point (100 = 1%)
+  interestRateBps Int
+  // ระยะเวลาสัญญา หน่วยเดือน
+  termMonths      Int
+  // วิธีชำระตามข้อตกลง
+  repaymentMethod String             @default("OTHER") @map("repayment_method")
+  // วันเวลาที่ลงนามสัญญา
+  signedAt        DateTime?
+  // วันเวลาที่จ่ายเงินกู้
+  disbursedAt     DateTime?
+  // วันครบกำหนดสัญญา
+  maturityAt      DateTime?
+  // วันเวลาที่สร้างสัญญา
+  createdAt       DateTime           @default(now())
+  // วันเวลาที่แก้ไขสัญญาล่าสุด
+  updatedAt       DateTime           @updatedAt
+  // คำขอสินเชื่อที่เชื่อมกับสัญญา
+  application     LoanApplication    @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  // ผู้กู้ตามสัญญา
+  borrower        BorrowerProfile    @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  // งวดชำระตามสัญญา
+  installments    LoanInstallment[]
+  // รายการรับชำระตามสัญญา
+  payments        LoanPayment[]
+
+  @@index([borrowerId, status])
+  @@map("loan_contracts")
+}
+
+// ตารางยอดเงินและวันครบกำหนดชำระแต่ละงวด
+model LoanInstallment {
+  // รหัสงวดชำระ
+  id                 Int                     @id @default(autoincrement())
+  // รหัสสัญญาที่เป็นเจ้าของงวด
+  contractId         Int
+  // ลำดับงวดภายในสัญญา
+  installmentNo      Int
+  // วันครบกำหนดชำระ
+  dueAt              DateTime
+  // เงินต้นที่ถึงกำหนด หน่วยสตางค์
+  principalDueSatang BigInt
+  // ดอกเบี้ยที่ถึงกำหนด หน่วยสตางค์
+  interestDueSatang  BigInt
+  // ค่าธรรมเนียมที่ถึงกำหนด หน่วยสตางค์
+  feeDueSatang       BigInt                  @default(0)
+  // สถานะการชำระของงวด
+  status             InstallmentStatus       @default(UPCOMING)
+  // วันเวลาที่ชำระงวดครบ
+  paidAt             DateTime?
+  // วันเวลาที่สร้างงวด
+  createdAt          DateTime                @default(now())
+  // วันเวลาที่แก้ไขงวดล่าสุด
+  updatedAt          DateTime                @updatedAt
+  // สัญญาที่เป็นเจ้าของงวด
+  contract           LoanContract            @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  // รายการรับชำระที่จัดสรรมายังงวดนี้
+  allocations        LoanPaymentAllocation[]
+
+  @@unique([contractId, installmentNo])
+  @@index([dueAt, status])
+  @@map("loan_installments")
+}
+
+// รายการรับชำระเงินจากผู้กู้
+model LoanPayment {
+  // รหัสรายการรับชำระ
+  id           Int                     @id @default(autoincrement())
+  // รหัสสัญญาที่รับชำระ
+  contractId   Int
+  // เลขที่ใบเสร็จหรือรายการรับชำระ
+  receiptNo    String                  @unique
+  // ยอดรับชำระ หน่วยสตางค์
+  amountSatang BigInt
+  // ช่องทางรับชำระ
+  method       PaymentMethod
+  // สถานะรายการรับชำระ
+  status       PaymentStatus           @default(PENDING)
+  // วันเวลาที่ได้รับชำระ
+  paidAt       DateTime?
+  // เลขอ้างอิงจากธนาคารหรือช่องทางชำระ
+  reference    String?
+  // รหัสผู้ใช้ที่บันทึกรายการ
+  recordedById Int?
+  // หมายเหตุรายการรับชำระ
+  note         String?
+  // วันเวลาที่สร้างรายการ
+  createdAt    DateTime                @default(now())
+  // วันเวลาที่แก้ไขรายการล่าสุด
+  updatedAt    DateTime                @updatedAt
+  // สัญญาที่เกี่ยวข้องกับการรับชำระ
+  contract     LoanContract            @relation(fields: [contractId], references: [id], onDelete: Restrict)
+  // ผู้ใช้ที่บันทึกรายการ
+  recordedBy   User?                   @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+  // การแบ่งยอดนี้ไปชำระแต่ละงวด
+  allocations  LoanPaymentAllocation[]
+
+  @@index([contractId, status, paidAt])
+  @@index([recordedById])
+  @@map("loan_payments")
+}
+
+// การจัดสรรยอดรับชำระไปยังงวดต่าง ๆ
+model LoanPaymentAllocation {
+  // รหัสการจัดสรรยอดชำระ
+  id            Int             @id @default(autoincrement())
+  // รหัสรายการรับชำระต้นทาง
+  paymentId     Int
+  // รหัสงวดที่นำยอดไปชำระ
+  installmentId Int
+  // ยอดที่จัดสรรให้งวดนี้ หน่วยสตางค์
+  amountSatang  BigInt
+  // วันเวลาที่สร้างการจัดสรร
+  createdAt     DateTime        @default(now())
+  // รายการรับชำระต้นทาง
+  payment       LoanPayment     @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  // งวดที่ได้รับการจัดสรรยอด
+  installment   LoanInstallment @relation(fields: [installmentId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, installmentId])
+  @@index([installmentId])
+  @@map("loan_payment_allocations")
+}
+
+// สมุดบัญชีรายรับรายจ่ายของบริษัท
+model CompanyLedgerEntry {
+  id                      String   @id
+  importKey               String   @unique @map("import_key")
+  organizationId          String   @map("organization_id")
+  occurredAt              DateTime @map("occurred_at")
+  transactionDate         String   @map("transaction_date")
+  transactionTime         String   @map("transaction_time")
+  transactionNo           String?  @map("transaction_no")
+  headquartersCode        String?  @map("headquarters_code")
+  branchCode              String?  @map("branch_code")
+  entryType               String   @map("entry_type")
+  description             String
+  category                String
+  memberId                String?  @map("member_id")
+  relatedParty            String?  @map("related_party")
+  paymentChannel          String?  @map("payment_channel")
+  referenceNo             String?  @map("reference_no")
+  sourceLabel             String?  @map("source_label")
+  baseAmountSatang        BigInt   @map("base_amount_satang")
+  vatPercent              Float?   @map("vat_percent")
+  vatAmountSatang         BigInt   @default(0) @map("vat_amount_satang")
+  withholdingPercent      Float?   @map("withholding_percent")
+  withholdingAmountSatang BigInt   @default(0) @map("withholding_amount_satang")
+  netIncomeSatang         BigInt   @default(0) @map("net_income_satang")
+  netExpenseSatang        BigInt   @default(0) @map("net_expense_satang")
+  note                    String?
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, entryType, transactionDate])
+  @@map("company_ledger_entries")
+}
+
+// ข้อมูลอ้างอิงไฟล์เอกสารของผู้กู้และสถานะตรวจเอกสาร
+model BorrowerDocument {
+  // รหัสข้อมูลเอกสาร
+  id              Int                   @id @default(autoincrement())
+  // รหัสผู้กู้เจ้าของเอกสาร
+  borrowerId      Int
+  // รหัสคำขอที่เอกสารประกอบ (ไม่บังคับ)
+  applicationId   Int?
+  // รหัสรายการตรวจสอบที่เอกสารประกอบ (ไม่บังคับ)
+  verificationId  Int?
+  // ประเภทเอกสาร
+  type            DocumentType
+  // สถานะการตรวจเอกสาร
+  status          DocumentStatus        @default(UPLOADED)
+  // ตำแหน่งหรือกุญแจอ้างอิงไฟล์ในระบบจัดเก็บ
+  storageKey      String                @unique
+  // ชื่อไฟล์ต้นฉบับ
+  fileName        String
+  // ชนิดข้อมูลไฟล์ เช่น application/pdf
+  mimeType        String
+  // ขนาดไฟล์ หน่วยไบต์
+  sizeBytes       Int
+  // วันเวลาที่อัปโหลดไฟล์
+  uploadedAt      DateTime              @default(now())
+  // วันเวลาที่ตรวจเอกสาร
+  reviewedAt      DateTime?
+  // เหตุผลที่เอกสารไม่ผ่าน
+  rejectionReason String?
+  // วันเวลาที่สร้างข้อมูลเอกสาร
+  createdAt       DateTime              @default(now())
+  // วันเวลาที่แก้ไขข้อมูลเอกสารล่าสุด
+  updatedAt       DateTime              @updatedAt
+  // ผู้กู้เจ้าของเอกสาร
+  borrower        BorrowerProfile       @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+  // คำขอที่เอกสารแนบอยู่
+  application     LoanApplication?      @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+  // รายการตรวจสอบที่เอกสารแนบอยู่
+  verification    BorrowerVerification? @relation(fields: [verificationId], references: [id], onDelete: SetNull)
+
+  @@index([borrowerId, type, status])
+  @@index([applicationId])
+  @@index([verificationId])
+  @@map("borrower_documents")
+}
+
+// หลักฐานการให้ ยกเลิก หรือปฏิเสธความยินยอมของผู้กู้
+model ConsentRecord {
+  // รหัสหลักฐานความยินยอม
+  id            Int             @id @default(autoincrement())
+  // รหัสผู้กู้ที่ให้หรือปฏิเสธความยินยอม
+  borrowerId    Int
+  // หัวข้อที่ขอความยินยอมหรือแจ้งให้ทราบ
+  type          ConsentType
+  // ผลการตัดสินใจของผู้กู้
+  decision      ConsentDecision
+  // รุ่นของนโยบายหรือข้อความที่แสดง
+  policyVersion String
+  // วันเวลาที่บันทึกการตัดสินใจ
+  recordedAt    DateTime        @default(now())
+  // ช่องทางหรือแหล่งที่บันทึกความยินยอม
+  source        String?
+  // ค่าแฮชสำหรับตรวจความถูกต้องของหลักฐาน
+  evidenceHash  String?
+  // หมายเลข IP ขณะบันทึก (ถ้ามี)
+  ipAddress     String?
+  // วันเวลาที่สร้างหลักฐาน
+  createdAt     DateTime        @default(now())
+  // ผู้กู้เจ้าของหลักฐาน
+  borrower      BorrowerProfile @relation(fields: [borrowerId], references: [id], onDelete: Restrict)
+
+  @@index([borrowerId, type, recordedAt])
+  @@map("consent_records")
+}
+
+// ข้อมูลจังหวัดสำหรับที่อยู่ในประเทศไทย
+model Province {
+  // รหัสจังหวัด
+  id        Int        @id @default(autoincrement())
+  // ชื่อจังหวัดภาษาไทย
+  nameTh    String     @map("name_th")
+  // ชื่อจังหวัดภาษาอังกฤษ
+  nameEn    String?    @map("name_en")
+  // อำเภอหรือเขตในจังหวัดนี้
+  districts District[]
+
+  @@map("provinces")
+}
+
+// ข้อมูลอำเภอหรือเขตและจังหวัดที่สังกัด
+model District {
+  // รหัสอำเภอหรือเขต
+  id           Int           @id @default(autoincrement())
+  // รหัสจังหวัดที่อำเภอหรือเขตสังกัด
+  provinceId   Int           @map("province_id")
+  // ชื่ออำเภอหรือเขตภาษาไทย
+  nameTh       String        @map("name_th")
+  // ชื่ออำเภอหรือเขตภาษาอังกฤษ
+  nameEn       String?       @map("name_en")
+  // จังหวัดที่อำเภอหรือเขตสังกัด
+  province     Province      @relation(fields: [provinceId], references: [id], onDelete: Restrict)
+  // ตำบลหรือแขวงในอำเภอหรือเขตนี้
+  subdistricts Subdistrict[]
+
+  @@index([provinceId, nameTh])
+  @@map("districts")
+}
+
+// ข้อมูลตำบลหรือแขวง รหัสไปรษณีย์ และพิกัด
+model Subdistrict {
+  // รหัสตำบลหรือแขวง
+  id         Int      @id @default(autoincrement())
+  // รหัสอำเภอหรือเขตที่ตำบลหรือแขวงสังกัด
+  districtId Int      @map("district_id")
+  // ชื่อตำบลหรือแขวงภาษาไทย
+  nameTh     String   @map("name_th")
+  // ชื่อตำบลหรือแขวงภาษาอังกฤษ
+  nameEn     String?  @map("name_en")
+  // ละติจูดของตำบลหรือแขวง
+  latitude   Float?
+  // ลองจิจูดของตำบลหรือแขวง
+  longitude  Float?
+  // รหัสไปรษณีย์
+  postcode   String?
+  // อำเภอหรือเขตที่ตำบลหรือแขวงสังกัด
+  district   District @relation(fields: [districtId], references: [id], onDelete: Restrict)
+
+  @@index([districtId, nameTh])
+  @@index([postcode])
+  @@map("subdistricts")
 }

@@ -3,14 +3,15 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "../../../generated/prisma/client";
 import { getSessionFromToken, sessionCookie } from "../../../lib/auth";
 import { prisma } from "../../../lib/prisma";
+import { nextRunningNumber } from "../../../lib/running-number";
 import { resolveAddressCodes } from "../../../lib/thai-addresses";
 
 const organizationId = "org_lobn";
 const noStore = { "Cache-Control": "no-store" };
 type Input = Record<string, unknown> & { id?: unknown };
-const fields = { id: true, nationalId: true, fullName: true, nameEn: true, dateOfBirth: true, gender: true, address: true, houseNumber: true, soi: true, road: true, subdistrictCode: true, subdistrict: true, districtCode: true, district: true, provinceCode: true, province: true, postcode: true, cardIssuer: true, cardIssuedOn: true, cardExpiresOn: true, photoData: true, source: true, kycVerifiedAt: true, kycMethod: true, createdAt: true } as const;
+const fields = { id: true, lenderNo: true, nationalId: true, fullName: true, nameEn: true, dateOfBirth: true, gender: true, address: true, houseNumber: true, soi: true, road: true, subdistrictCode: true, subdistrict: true, districtCode: true, district: true, provinceCode: true, province: true, postcode: true, cardIssuer: true, cardIssuedOn: true, cardExpiresOn: true, photoData: true, source: true, kycVerifiedAt: true, kycMethod: true, createdAt: true } as const;
 function clean(value: unknown) { return typeof value === "string" ? value.trim() || null : null; }
-function format(row: { id: string; nationalId: string; fullName: string; nameEn: string | null; dateOfBirth: string | null; gender: string | null; address: string | null; houseNumber: string | null; soi: string | null; road: string | null; subdistrictCode: string | null; subdistrict: string | null; districtCode: string | null; district: string | null; provinceCode: string | null; province: string | null; postcode: string | null; cardIssuer: string | null; cardIssuedOn: string | null; cardExpiresOn: string | null; photoData: string | null; source: string; kycVerifiedAt: Date | null; kycMethod: string | null; createdAt: Date }) {
+function format(row: { id: string; lenderNo: string; nationalId: string; fullName: string; nameEn: string | null; dateOfBirth: string | null; gender: string | null; address: string | null; houseNumber: string | null; soi: string | null; road: string | null; subdistrictCode: string | null; subdistrict: string | null; districtCode: string | null; district: string | null; provinceCode: string | null; province: string | null; postcode: string | null; cardIssuer: string | null; cardIssuedOn: string | null; cardExpiresOn: string | null; photoData: string | null; source: string; kycVerifiedAt: Date | null; kycMethod: string | null; createdAt: Date }) {
   return { ...row, kycVerifiedAt: row.kycVerifiedAt?.toISOString() ?? null, createdAt: row.createdAt.toISOString() };
 }
 async function authorized(request: NextRequest) { return Boolean(await getSessionFromToken(request.cookies.get(sessionCookie.name)?.value)); }
@@ -62,12 +63,13 @@ export async function POST(request: NextRequest) {
   const parsed = await validate(body);
   if ("error" in parsed) return NextResponse.json({ message: parsed.error }, { status: 400, headers: noStore });
   try {
-    const existing = await prisma.lender.findUnique({ where: { organizationId_nationalId: { organizationId, nationalId: parsed.data.nationalId } }, select: { id: true, status: true } });
+    const existing = await prisma.lender.findUnique({ where: { organizationId_nationalId: { organizationId, nationalId: parsed.data.nationalId } }, select: { id: true, lenderNo: true, status: true } });
     if (existing?.status === "active") return NextResponse.json({ message: "เลขประจำตัวประชาชนนี้มีในทะเบียนผู้ให้กู้แล้ว" }, { status: 409, headers: noStore });
+    const lenderNo = existing?.lenderNo ?? await nextRunningNumber({ scope: organizationId, series: "LND", prefix: "LND", width: 6 });
     const lender = await prisma.lender.upsert({
       where: { organizationId_nationalId: { organizationId, nationalId: parsed.data.nationalId } },
-      create: { id: randomUUID(), organizationId, ...parsed.data },
-      update: { ...parsed.data, status: "active" },
+      create: { id: randomUUID(), organizationId, lenderNo, ...parsed.data },
+      update: { lenderNo, ...parsed.data, status: "active" },
       select: fields,
     });
     return NextResponse.json({ lender: format(lender) }, { status: 201, headers: noStore });

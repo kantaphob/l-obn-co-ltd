@@ -5,10 +5,10 @@ import { readThaiIdCard } from "../../../lib/thai-id-card";
 const noStore = { "Cache-Control": "no-store" };
 
 export async function POST(request: NextRequest) {
-  if (!(await getSessionFromToken(request.cookies.get(sessionCookie.name)?.value))) {
-    return NextResponse.json({ message: "กรุณาเข้าสู่ระบบ" }, { status: 401, headers: noStore });
-  }
   try {
+    if (!(await getSessionFromToken(request.cookies.get(sessionCookie.name)?.value))) {
+      return NextResponse.json({ message: "กรุณาเข้าสู่ระบบ" }, { status: 401, headers: noStore });
+    }
     const card = await readThaiIdCard();
     return NextResponse.json({ card, reader: "ACS ACR39U" }, { headers: noStore });
   } catch (error) {

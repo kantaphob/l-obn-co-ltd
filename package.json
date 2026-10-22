@@ -9,19 +9,21 @@
     "lint": "eslint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:admin": "tsx scripts/seed-admin.ts",
     "db:studio": "prisma studio",
     "data:import": "tsx scripts/import_company_data.ts",
     "data:postcode": "tsx scripts/import_thai_postcodes.ts"
   },
   "dependencies": {
     "@mbarrie2/pcsclite": "^0.6.3",
-    "@prisma/adapter-better-sqlite3": "^7.10.1",
+    "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
-    "better-sqlite3": "^13.0.3",
     "csv-parse": "^7.0.3",
     "dotenv": "^18.0.8",
     "next": "16.4.2",
+    "pg": "^8.23.1",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
@@ -40,11 +42,7 @@
   "allowScripts": {
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true,
-    "better-sqlite3@13.0.3": true,
     "esbuild@0.28.2": true,
     "@mbarrie2/pcsclite@0.6.3": true
-  },
-  "overrides": {
-    "better-sqlite3": "$better-sqlite3"
   }
 }

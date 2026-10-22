@@ -1,99 +1,53 @@
-const SESSION_COOKIE = "jaidee_session";
-const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+import { createHash } from "node:crypto";
+import { prisma } from "./prisma";
+import { sessionCookie, verifySessionToken } from "./session-token";
 
-function base64UrlEncode(value: Uint8Array) {
-  return btoa(String.fromCharCode(...value))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-}
+export { sessionCookie };
 
-function base64UrlDecode(value: string) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const binary = atob(normalized + "=".repeat((4 - (normalized.length % 4)) % 4));
-  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-}
-
-async function signingKey() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) return null;
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
-}
-
-export function getAdminCredentials() {
-  const username = process.env.ADMIN_USERNAME;
-  const password = process.env.ADMIN_PASSWORD;
-  return username && password ? { username, password } : null;
-}
-
-export function constantTimeEqual(left: string, right: string) {
-  const encoder = new TextEncoder();
-  const a = encoder.encode(left);
-  const b = encoder.encode(right);
-  let difference = a.length ^ b.length;
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
-  }
-  return difference === 0;
-}
-
-export async function createSessionToken(username: string) {
-  const key = await signingKey();
-  if (!key) throw new Error("SESSION_SECRET must be set to at least 32 characters.");
-  const payload = base64UrlEncode(new TextEncoder().encode(JSON.stringify({
-    role: "admin",
-    username,
-    expiresAt: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
-  })));
-  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
-  return `${payload}.${base64UrlEncode(new Uint8Array(signature))}`;
+export function hashSessionToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 export async function getSessionFromToken(token?: string) {
-  if (!token) return null;
-  const [payload, signature, extra] = token.split(".");
-  if (!payload || !signature || extra) return null;
-  const key = await signingKey();
-  if (!key) return null;
-  try {
-    const valid = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      base64UrlDecode(signature),
-      new TextEncoder().encode(payload),
-    );
-    if (!valid) return null;
-    const session = JSON.parse(new TextDecoder().decode(base64UrlDecode(payload))) as {
-      role?: string;
-      username?: string;
-      expiresAt?: number;
-    };
-    if (session.role !== "admin" || typeof session.expiresAt !== "number" || session.expiresAt <= Date.now() / 1000) return null;
-    const username = session.username?.trim() || getAdminCredentials()?.username;
-    if (!username) return null;
-    return {
-      username,
-      displayName: process.env.ADMIN_DISPLAY_NAME?.trim() || username,
-      role: session.role,
-      expiresAt: session.expiresAt,
-    };
-  } catch {
-    return null;
-  }
+  const payload = await verifySessionToken(token);
+  if (!payload || !token) return null;
+
+  const session = await prisma.session.findUnique({
+    where: { tokenHash: hashSessionToken(token) },
+    include: {
+      user: {
+        include: {
+          role: { include: { permissions: { select: { permission: true } } } },
+          userProfile: { select: { name: true, surname: true } },
+        },
+      },
+    },
+  });
+  if (
+    !session ||
+    session.revokedAt ||
+    session.expiresAt.getTime() <= Date.now() ||
+    session.userId !== payload.userId ||
+    session.user.username !== payload.username ||
+    session.user.role.code !== payload.roleCode
+  ) return null;
+
+  const profileName = session.user.userProfile;
+  const displayName = profileName ? `${profileName.name} ${profileName.surname}`.trim() : session.user.username;
+  return {
+    userId: session.user.id,
+    username: session.user.username,
+    displayName,
+    role: session.user.role.code,
+    permissions: session.user.role.permissions.map(({ permission }) => permission),
+    expiresAt: session.expiresAt,
+  };
 }
 
-export async function isValidSessionToken(token?: string) {
-  return Boolean(await getSessionFromToken(token));
+export async function revokeSession(token?: string) {
+  if (!token) return;
+  await prisma.session.updateMany({
+    where: { tokenHash: hashSessionToken(token), revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
 }
-
-export const sessionCookie = {
-  name: SESSION_COOKIE,
-  maxAge: SESSION_TTL_SECONDS,
-};

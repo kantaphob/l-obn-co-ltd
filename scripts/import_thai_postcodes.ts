@@ -75,7 +75,10 @@ function optionalText(value: SqlValue) {
 }
 
 function optionalNumber(value: SqlValue) {
-  return typeof value === "number" ? value : null;
+  if (typeof value === "number") return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 async function main() {

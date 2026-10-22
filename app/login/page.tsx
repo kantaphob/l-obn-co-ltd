@@ -1,14 +1,14 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { useToast } from "../../components/toast";
 
 export default function LoginPage() {
-  const [message, setMessage] = useState("");
+  const notify = useToast();
   const [pending, setPending] = useState(false);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage("");
     setPending(true);
     const form = new FormData(event.currentTarget);
     try {
@@ -19,12 +19,12 @@ export default function LoginPage() {
       });
       const result = await response.json();
       if (!response.ok) {
-        setMessage(result.message ?? "เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+        notify(result.message ?? "เข้าสู่ระบบไม่สำเร็จ กรุณาลองอีกครั้ง", "error");
         return;
       }
       window.location.assign("/");
     } catch {
-      setMessage("เชื่อมต่อระบบไม่ได้ กรุณาลองอีกครั้ง");
+      notify("เชื่อมต่อระบบไม่ได้ กรุณาลองอีกครั้ง", "error");
     } finally {
       setPending(false);
     }
@@ -45,7 +45,6 @@ export default function LoginPage() {
           <input id="username" name="username" autoComplete="username" required autoFocus />
           <label htmlFor="password">รหัสผ่าน</label>
           <input id="password" name="password" type="password" autoComplete="current-password" required />
-          {message && <p className="login-error" role="alert">{message}</p>}
           <button className="login-submit" type="submit" disabled={pending}>{pending ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}</button>
         </form>
         <p className="login-footer">บัญชีนี้มีสิทธิ์ผู้ดูแลระบบเต็มรูปแบบ</p>

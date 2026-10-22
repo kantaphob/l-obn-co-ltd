@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-import { defineConfig } from "prisma/config";
+import { defineConfig, env } from "prisma/config";
 
 dotenv.config({ path: ".env.local" });
 dotenv.config();
@@ -11,6 +11,6 @@ export default defineConfig({
     seed: "tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env.DATABASE_URL ?? "file:./.data/loans.sqlite",
+    url: env("DATABASE_URL"),
   },
 });

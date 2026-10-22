@@ -29,30 +29,63 @@ function commandFor(offset: number, length: number) {
   return Buffer.from([0x80, 0xb0, (offset >> 8) & 0xff, offset & 0xff, 0x02, 0x00, length]);
 }
 
+let readInProgress = false;
+
 export async function readThaiIdCard(): Promise<ThaiIdCardData> {
+  if (readInProgress) throw new Error("กำลังอ่านบัตรอยู่ กรุณารอสักครู่แล้วลองใหม่");
+  readInProgress = true;
+  let pcsc: ReturnType<typeof pcsclite>;
+  try { pcsc = pcsclite(); }
+  catch (error) {
+    readInProgress = false;
+    throw error instanceof Error ? error : new Error("เปิดการเชื่อมต่อ PC/SC ไม่สำเร็จ");
+  }
+
   return new Promise((resolve, reject) => {
-    const pcsc = pcsclite();
     let settled = false;
     let activeReader: { connected: boolean; SCARD_LEAVE_CARD: number; disconnect: (disposition: number, callback: (error?: Error | null) => void) => void; close: () => void } | undefined;
     const finish = (error?: Error, data?: ThaiIdCardData) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (activeReader?.connected) activeReader.disconnect(activeReader.SCARD_LEAVE_CARD, () => activeReader?.close());
-      else activeReader?.close();
-      pcsc.close();
-      if (error) reject(error);
-      else resolve(data!);
+      const complete = () => {
+        try { pcsc.close(); } catch { /* The card data is already read; allow a later request to retry. */ }
+        readInProgress = false;
+        if (error) reject(error);
+        else resolve(data!);
+      };
+      const closeReader = (reader: NonNullable<typeof activeReader>) => {
+        try { reader.close(); } catch { /* The context will still be closed below. */ }
+      };
+      const reader = activeReader;
+      activeReader = undefined;
+      if (!reader) return complete();
+      if (!reader.connected) {
+        closeReader(reader);
+        complete();
+        return;
+      }
+      try {
+        reader.disconnect(reader.SCARD_LEAVE_CARD, () => {
+          closeReader(reader);
+          complete();
+        });
+      } catch {
+        closeReader(reader);
+        complete();
+      }
     };
     const timer = setTimeout(() => finish(new Error("ไม่พบเครื่องอ่านหรือบัตรภายใน 20 วินาที กรุณาเสียบบัตรแล้วลองอีกครั้ง")), 20_000);
     pcsc.on("error", (error) => finish(new Error(error.message || "เชื่อมต่อ PC/SC ไม่สำเร็จ")));
     pcsc.on("reader", (reader) => {
-      activeReader = reader;
+      if (settled) { try { reader.close(); } catch { /* Reader already finished. */ } return; }
       if (!/ACS|ACR39/i.test(reader.name)) return;
+      activeReader = reader;
       let reading = false;
       reader.on("error", (error) => finish(new Error(error.message || "อ่านบัตรไม่สำเร็จ")));
-      reader.on("status", (status) => {
-        if (reading || !(status.state & reader.SCARD_STATE_PRESENT)) return;
+      reader.on("end", () => finish(new Error("เครื่องอ่านถูกถอดออก กรุณาเสียบเครื่องอ่านแล้วลองใหม่")));
+      const readIfPresent = (state: number) => {
+        if (reading || !(state & reader.SCARD_STATE_PRESENT)) return;
         reading = true;
         reader.connect({ share_mode: reader.SCARD_SHARE_SHARED }, async (connectError, protocol) => {
           if (connectError) {
@@ -109,6 +142,13 @@ export async function readThaiIdCard(): Promise<ThaiIdCardData> {
             finish(undefined, data);
           } catch (error) { finish(error instanceof Error ? error : new Error("อ่านข้อมูลจากบัตรไม่สำเร็จ")); }
         });
+      };
+      reader.on("status", (status) => readIfPresent(status.state));
+
+      // The card may already be in the reader before the user starts the read request.
+      // Query current state as well as listening for the next insertion event.
+      reader.get_status((error, state) => {
+        if (!error) readIfPresent(state);
       });
     });
   });
