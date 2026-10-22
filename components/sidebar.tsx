@@ -21,8 +21,8 @@ type SidebarProps = {
 };
 
 const menuGroups: MenuGroup[] = [
-  { category: "ภาพรวม", items: [{ label: "ภาพรวม", icon: "grid", href: "/" }] },
-  { category: "ผู้กู้และสมาชิก", items: [{ label: "ผู้กู้", icon: "people", href: "/borrowers" }] },
+  { category: "ภาพรวม", items: [{ label: "ภาพรวม", icon: "grid", href: "/" }, { label: "ผู้ให้กู้", icon: "bank", href: "/lender" }] },
+  { category: "ผู้กู้และสมาชิก", items: [{ label: "ผู้กู้", icon: "people", href: "/borrowers" }, { label: "อ่านบัตร", icon: "card", href: "/card-reader" }] },
   { category: "จัดการสินเชื่อ", items: [{ label: "พิจารณาอนุมัติ", icon: "approval", href: "/loans/review" }, { label: "สัญญากู้", icon: "file", href: "/loans/contracts" }] },
   { category: "ติดตามรับชำระ", items: [{ label: "ตารางงวด", icon: "calendar", href: "/repayments/schedule" }, { label: "ค้างชำระ", icon: "clock", href: "/repayments/overdue" }] },
   { category: "การเงินและรายงาน", items: [{ label: "รายรับรายจ่าย", icon: "book", href: "/accounting/ledger" }, { label: "ผลดำเนินงาน", icon: "chart", href: "/reports/performance" }] },
@@ -31,7 +31,9 @@ const menuGroups: MenuGroup[] = [
 
 export const navByPath: Record<string, string> = {
   "/": "ภาพรวม",
+  "/lender": "ผู้ให้กู้",
   "/borrowers": "ผู้กู้",
+  "/card-reader": "อ่านบัตร",
   "/loans/review": "พิจารณาอนุมัติ",
   "/loans/contracts": "สัญญากู้",
   "/repayments/schedule": "ตารางงวด",

@@ -5,14 +5,26 @@ This project uses Prisma ORM with SQLite. Prisma schema and migration history li
 ## Initialize a fresh local database
 
 ```sh
-cp .env.example .env.local
+cp -n .env.example .env.local
 npm install
+mkdir -p .data
+touch .data/loans.sqlite
 npm run db:migrate -- --name init
 npm run db:seed
 npm run db:generate
 ```
 
 Start Prisma Studio with `npm run db:studio`. Start the app with `npm run dev`.
+
+## Thai postcode reference data
+
+The local database includes `Province`, `District`, and `Subdistrict` tables. Import the supplied PostgreSQL-compatible SQL data with Prisma:
+
+```sh
+npm run data:postcode -- "/path/to/thailand-province"
+```
+
+The folder must contain `province.sql.pg`, `district.sql.pg`, and `subdistrict.sql.pg`. Importing replaces only these three reference tables and keeps their source IDs and postcode values.
 
 ## Import company CSV files
 

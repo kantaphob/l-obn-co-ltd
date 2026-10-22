@@ -5,11 +5,23 @@ const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
 };
 
-const adapter = new PrismaBetterSqlite3({
-  url: process.env.DATABASE_URL ?? "file:./.data/loans.sqlite",
-});
+const cachedPrisma = globalForPrisma.prisma;
+const hasAddressModels = cachedPrisma
+  && "province" in cachedPrisma
+  && "district" in cachedPrisma
+  && "subdistrict" in cachedPrisma;
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
+if (cachedPrisma && !hasAddressModels) {
+  void cachedPrisma.$disconnect().catch(() => undefined);
+}
+
+export const prisma = hasAddressModels
+  ? cachedPrisma!
+  : new PrismaClient({
+    adapter: new PrismaBetterSqlite3({
+      url: process.env.DATABASE_URL ?? "file:./.data/loans.sqlite",
+    }),
+  });
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;

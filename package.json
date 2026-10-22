@@ -11,9 +11,11 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
-    "data:import": "tsx scripts/import_company_data.ts"
+    "data:import": "tsx scripts/import_company_data.ts",
+    "data:postcode": "tsx scripts/import_thai_postcodes.ts"
   },
   "dependencies": {
+    "@mbarrie2/pcsclite": "^0.6.3",
     "@prisma/adapter-better-sqlite3": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "better-sqlite3": "^13.0.3",
@@ -39,7 +41,8 @@
     "prisma@7.10.1": true,
     "@prisma/engines@7.10.1": true,
     "better-sqlite3@13.0.3": true,
-    "esbuild@0.28.2": true
+    "esbuild@0.28.2": true,
+    "@mbarrie2/pcsclite@0.6.3": true
   },
   "overrides": {
     "better-sqlite3": "$better-sqlite3"

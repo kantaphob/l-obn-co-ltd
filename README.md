@@ -36,7 +36,7 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 The local database is `.data/loans.sqlite`. Set up a fresh database with:
 
 ```sh
-cp .env.example .env.local
+cp -n .env.example .env.local
 mkdir -p .data
 touch .data/loans.sqlite
 npm run db:migrate -- --name init

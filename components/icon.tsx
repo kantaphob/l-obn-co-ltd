@@ -30,6 +30,8 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
     approval: <><path d="M7 3.5h8l4 4V13M15 3.5V8h4M7 12h5M7 16h4"/><path d="m14 18 2 2 4-4"/><path d="M5 3.5h10"/></>,
     alert: <><path d="M10.3 3.8 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.8a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 16.5h.01"/></>,
     info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/></>,
+    scan: <><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/><path d="M7 9h10v6H7z"/></>,
+    card: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 14h4M7 16h2"/></>,
     logout: <><path d="M10 17l5-5-5-5M15 12H3"/><path d="M12 3h6a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-6"/></>,
   };
   return <svg {...common}>{paths[name] ?? paths.grid}</svg>;

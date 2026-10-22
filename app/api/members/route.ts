@@ -16,6 +16,7 @@ type MemberInput = {
   nationalId?: unknown;
   address?: unknown;
   dateOfBirth?: unknown;
+  photoData?: unknown;
   team?: unknown;
 };
 
@@ -51,6 +52,7 @@ function memberSelect() {
     nationalId: true,
     address: true,
     dateOfBirth: true,
+    photoData: true,
     department: { select: { name: true } },
   } as const;
 }
@@ -64,6 +66,7 @@ type MemberResult = {
   nationalId: string | null;
   address: string | null;
   dateOfBirth: string | null;
+  photoData: string | null;
   department: { name: string } | null;
 };
 
@@ -78,6 +81,7 @@ function formatMember(member: MemberResult | null) {
     nationalId: member.nationalId,
     address: member.address,
     dateOfBirth: member.dateOfBirth,
+    photoData: member.photoData,
     team: member.department?.name ?? null,
   };
 }
@@ -100,6 +104,13 @@ export async function POST(request: NextRequest) {
   if (!name) return NextResponse.json({ message: "กรุณาระบุชื่อสมาชิก" }, { status: 400, headers: noStore });
 
   const employeeCode = clean(body.employeeCode);
+  const nationalId = clean(body.nationalId);
+  const photoData = clean(body.photoData);
+  if (nationalId && !/^\d{13}$/.test(nationalId)) return NextResponse.json({ message: "เลขประจำตัวประชาชนต้องมี 13 หลัก" }, { status: 400, headers: noStore });
+  if (photoData && (photoData.length > 100_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(photoData))) return NextResponse.json({ message: "รูปถ่ายจากบัตรไม่ถูกต้อง" }, { status: 400, headers: noStore });
+  if (nationalId && await prisma.member.findFirst({ where: { organizationId, nationalId, employmentStatus: "active" }, select: { id: true } })) {
+    return NextResponse.json({ message: "เลขประจำตัวประชาชนนี้มีในทะเบียนผู้กู้แล้ว" }, { status: 409, headers: noStore });
+  }
   try {
     const member = await prisma.$transaction(async (transaction) => {
       const department = await findOrCreateDepartment(clean(body.team), transaction);
@@ -112,9 +123,10 @@ export async function POST(request: NextRequest) {
           fullName: name,
           nickname: clean(body.nickname),
           phone: clean(body.phone),
-          nationalId: clean(body.nationalId),
+          nationalId,
           address: clean(body.address),
           dateOfBirth: clean(body.dateOfBirth),
+          photoData,
         },
         select: memberSelect(),
       });
@@ -135,6 +147,13 @@ export async function PATCH(request: NextRequest) {
   const id = clean(body.id);
   const name = clean(body.name);
   if (!id || !name) return NextResponse.json({ message: "กรุณาระบุชื่อสมาชิก" }, { status: 400, headers: noStore });
+  const nationalId = clean(body.nationalId);
+  const photoData = clean(body.photoData);
+  if (nationalId && !/^\d{13}$/.test(nationalId)) return NextResponse.json({ message: "เลขประจำตัวประชาชนต้องมี 13 หลัก" }, { status: 400, headers: noStore });
+  if (photoData && (photoData.length > 100_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(photoData))) return NextResponse.json({ message: "รูปถ่ายจากบัตรไม่ถูกต้อง" }, { status: 400, headers: noStore });
+  if (nationalId && await prisma.member.findFirst({ where: { organizationId, nationalId, id: { not: id }, employmentStatus: "active" }, select: { id: true } })) {
+    return NextResponse.json({ message: "เลขประจำตัวประชาชนนี้มีในทะเบียนผู้กู้แล้ว" }, { status: 409, headers: noStore });
+  }
 
   try {
     const member = await prisma.$transaction(async (transaction) => {
@@ -147,9 +166,10 @@ export async function PATCH(request: NextRequest) {
           fullName: name,
           nickname: clean(body.nickname),
           phone: clean(body.phone),
-          nationalId: clean(body.nationalId),
+          nationalId,
           address: clean(body.address),
           dateOfBirth: clean(body.dateOfBirth),
+          photoData,
         },
       });
       if (!result.count) return null;

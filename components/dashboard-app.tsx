@@ -3,6 +3,8 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "./icon";
+import CardReader from "./card-reader";
+import { LendersPanel } from "./lenders-panel";
 import { Sidebar, navByPath } from "./sidebar";
 import { Toast, type ToastKind, type ToastMessage } from "./toast";
 
@@ -11,6 +13,7 @@ type CurrentUser = { username: string; displayName: string; role: string };
 type LoanStatus = "รอพิจารณา" | "อนุมัติแล้ว" | "เอกสารไม่ครบ" | "ปฏิเสธ";
 type Loan = {
   id: string;
+  memberId?: string;
   name: string;
   initials: string;
   color: string;
@@ -21,6 +24,7 @@ type Loan = {
   date: string;
   status: LoanStatus;
   score: number;
+  recorder?: string;
 };
 
 type Contract = {
@@ -37,24 +41,7 @@ type Contract = {
   status: "รอลงนาม";
 };
 
-const initialLoans: Loan[] = [
-  { id: "LN-260418", name: "ณัฐวุฒิ ใจดี", initials: "ณจ", color: "mint", team: "ฝ่ายผลิต · พนักงานประจำ", purpose: "ค่าใช้จ่ายฉุกเฉิน", amount: 25000, term: 10, date: "18 ต.ค. 2569", status: "รอพิจารณา", score: 92 },
-  { id: "LN-260417", name: "พิมพ์ชนก แสงทอง", initials: "พส", color: "peach", team: "ฝ่ายขาย · อายุงาน 3 ปี", purpose: "ค่ารักษาพยาบาล", amount: 18000, term: 6, date: "18 ต.ค. 2569", status: "รอพิจารณา", score: 88 },
-  { id: "LN-260419", name: "วรัญญา สุขใจ", initials: "วส", color: "blue", team: "ฝ่ายบริการ · พนักงานประจำ", purpose: "ค่าใช้จ่ายฉุกเฉิน", amount: 15000, term: 6, date: "19 ต.ค. 2569", status: "รอพิจารณา", score: 85 },
-  { id: "LN-260416", name: "ธนกร วัฒนกุล", initials: "ธว", color: "lavender", team: "ฝ่ายบัญชี · พนักงานประจำ", purpose: "ซ่อมแซมที่อยู่อาศัย", amount: 40000, term: 12, date: "17 ต.ค. 2569", status: "เอกสารไม่ครบ", score: 74 },
-  { id: "LN-260415", name: "ศิริพร พูนผล", initials: "ศพ", color: "blue", team: "ฝ่ายบุคคล · อายุงาน 5 ปี", purpose: "การศึกษาบุตร", amount: 30000, term: 10, date: "16 ต.ค. 2569", status: "อนุมัติแล้ว", score: 96 },
-  { id: "LN-260414", name: "กิตติพงษ์ มีสุข", initials: "กม", color: "yellow", team: "ฝ่ายจัดส่ง · พนักงานประจำ", purpose: "ค่าใช้จ่ายฉุกเฉิน", amount: 12000, term: 4, date: "15 ต.ค. 2569", status: "ปฏิเสธ", score: 51 },
-];
-
 const money = (value: number) => new Intl.NumberFormat("th-TH").format(value);
-
-const members = [
-  { name: "ศิริพร พูนผล", team: "ฝ่ายบุคคล", loans: 2, balance: 12000, state: "ปกติ", initials: "ศพ" },
-  { name: "อรทัย จันทร์เพ็ญ", team: "ฝ่ายผลิต", loans: 1, balance: 15000, state: "ปกติ", initials: "อจ" },
-  { name: "ณัฐวุฒิ ใจดี", team: "ฝ่ายผลิต", loans: 1, balance: 25000, state: "ปกติ", initials: "ณจ" },
-  { name: "ปรีชา ศรีสวัสดิ์", team: "ฝ่ายขาย", loans: 2, balance: 9000, state: "ติดตามชำระ", initials: "ปศ" },
-  { name: "พิมพ์ชนก แสงทอง", team: "ฝ่ายขาย", loans: 1, balance: 18000, state: "ปกติ", initials: "พส" },
-];
 type Member = {
   id?: string;
   employeeCode?: string | null;
@@ -64,12 +51,18 @@ type Member = {
   nationalId?: string | null;
   address?: string | null;
   dateOfBirth?: string | null;
+  photoData?: string | null;
   team: string;
   loans: number;
   balance: number;
   state: string;
   initials: string;
 };
+
+function MemberAvatar({ member, large = false }: { member: Member; large?: boolean }) {
+  if (member.photoData) return <img className={`person-avatar mint member-avatar-photo ${large ? "large" : ""}`} src={`data:image/jpeg;base64,${member.photoData}`} alt={`รูปของ ${member.name}`} />;
+  return <div className={`person-avatar mint ${large ? "large" : ""}`}>{member.initials}</div>;
+}
 
 type LedgerEntry = {
   id: string;
@@ -194,11 +187,7 @@ function LedgerView({ entries, search, setSearch, onCreated, notify }: {
   </div>;
 }
 
-const initialRepayments = [
-  { id: "RP-1042", name: "อรทัย จันทร์เพ็ญ", contract: "CT-260312", due: "22 ต.ค. 2569", amount: 2500 },
-  { id: "RP-1038", name: "ปรีชา ศรีสวัสดิ์", contract: "CT-260309", due: "24 ต.ค. 2569", amount: 3000 },
-  { id: "RP-1031", name: "ศิริพร พูนผล", contract: "CT-260305", due: "26 ต.ค. 2569", amount: 3500 },
-];
+const initialRepayments: Array<{ id: string; name: string; contract: string; due: string; amount: number }> = [];
 
 const loanFocusOptions = [
   { value: "ค่าใช้จ่ายฉุกเฉิน", title: "ค่าใช้จ่ายจำเป็น", detail: "รายจ่ายเร่งด่วนในครัวเรือน", icon: "clock" },
@@ -243,17 +232,29 @@ type ModuleViewProps = {
 
 function ModuleView(props: ModuleViewProps) {
   const { activeNav, loans, search, setSearch, filter, setFilter, onSelect, onCreate, onCreateContract, contracts, notify, paidRepayments, onTogglePaid, members: memberRows, onAddMember, onEditMember, onDeleteMember, ledgerEntries } = props;
+  const [selectedBorrower, setSelectedBorrower] = useState<Member | null>(null);
   const query = search.trim().toLowerCase();
   const visibleLoans = loans.filter((loan) => (filter === "ทั้งหมด" || loan.status === filter) && `${loan.name} ${loan.id} ${loan.purpose}`.toLowerCase().includes(query));
 
+  if (activeNav === "ผู้ให้กู้") return <LendersPanel />;
+
+  if (activeNav === "อ่านบัตร") return <section className="module-page panel card-reader-page"><div className="module-header"><div><span className="drawer-kicker">เครื่องมือทะเบียนผู้ให้กู้</span><h2>อ่านข้อมูลจากบัตร</h2><p>อ่านชิปบัตรประชาชนผ่านเครื่อง ACS ACR39U แล้วบันทึกเข้าทะเบียนผู้ให้กู้</p></div></div><CardReader /></section>;
+
   if (["คำขอกู้ยืม", "พิจารณาอนุมัติ"].includes(activeNav)) return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">จัดการสินเชื่อ</span><h2>{activeNav}</h2><p>ค้นหา ตรวจสอบสถานะ และเปิดรายละเอียดคำขอจากสมาชิก</p></div><button className="primary-button" onClick={onCreate}><Icon name="plus" size={17} /> สร้างคำขอ</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ เลขที่คำขอ หรือวัตถุประสงค์" /></label><span>ทั้งหมด {visibleLoans.length} รายการ</span></div><div className="filter-tabs module-filter-tabs">{["ทั้งหมด", "รอพิจารณา", "อนุมัติแล้ว", "เอกสารไม่ครบ", "ปฏิเสธ"].map((tab) => <button key={tab} className={filter === tab ? "selected" : ""} onClick={() => setFilter(tab)}>{tab}</button>)}</div><div className="module-list">{visibleLoans.map((loan) => <button className="module-loan-row" key={loan.id} onClick={() => onSelect(loan)}><div className={`person-avatar ${loan.color}`}>{loan.initials}</div><div className="module-loan-person"><b>{loan.name}</b><small>{loan.id} · {loan.purpose}</small></div><strong>฿{money(loan.amount)}</strong><Status value={loan.status} /><Icon name="chevron" size={17} /></button>)}{visibleLoans.length === 0 && <div className="empty-state">ไม่พบคำขอ</div>}</div></section>;
 
-  if (["สัญญากู้ยืม", "สัญญากู้", "ตารางงวด", "ปฏิทินรับเงิน", "ค้างชำระ", "งานติดตามหนี้"].includes(activeNav)) return <div className="module-stack"><div className="module-header panel"><div><span className="drawer-kicker">การจัดการสินเชื่อ</span><h2>{activeNav}</h2><p>สร้างสัญญาจากคำขอที่อนุมัติแล้ว พร้อมระบุอัตราดอกเบี้ยตามข้อตกลง</p></div><div className="module-header-actions"><button className="primary-button" onClick={onCreateContract}><Icon name="plus" size={16} /> สร้างสัญญา</button></div></div><div className="summary-grid module-stats"><article className="summary-card"><div className="card-heading">สัญญาที่กำลังผ่อน</div><div className="metric-value">{18 + contracts.length}<small> สัญญา</small></div></article><article className="summary-card"><div className="card-heading">ยอดคงค้างรวม</div><div className="metric-value">฿{money(386000 + contracts.reduce((sum, item) => sum + item.amount, 0))}</div></article><article className="summary-card"><div className="card-heading">ครบกำหนด 7 วันนี้</div><div className="metric-value">{initialRepayments.length - paidRepayments.length}<small> รายการ</small></div></article><article className="summary-card"><div className="card-heading">รับชำระแล้วเดือนนี้</div><div className="metric-value">฿{money(186250)}</div></article></div>{contracts.length > 0 && <section className="panel module-page"><div className="panel-head"><div><h2>สัญญาที่สร้างล่าสุด</h2><p>อัตราดอกเบี้ยต่อปีและยอดชำระตามเงื่อนไขที่ตกลง</p></div></div><div className="repayment-table">{contracts.map((contract) => <div className="repayment-table-row" key={contract.id}><div className="repayment-date"><Icon name="file" size={16} /><span>{contract.id}</span></div><div className="repayment-person"><b>{contract.name}</b><small>{contract.annualInterestRate}% ต่อปี · {contract.installments} งวด · งวดแรก {new Date(`${contract.firstDueOn}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })} · {contract.repaymentMethod}</small></div><strong>฿{money(contract.monthlyPayment)}/งวด</strong><span className="status status-pending"><Icon name="clock" size={13} /> {contract.status}</span></div>)}</div></section>}<section className="panel module-page"><div className="panel-head"><div><h2>ตารางชำระที่ใกล้ถึง</h2><p>ติดตามกำหนดชำระและสถานะรายการ</p></div></div><div className="repayment-table">{initialRepayments.map((item) => { const isPaid = paidRepayments.includes(item.id); return <div className="repayment-table-row" key={item.id}><div className="repayment-date"><Icon name="clock" size={16} /><span>{item.due}</span></div><div className="repayment-person"><b>{item.name}</b><small>{item.id} · สัญญา {item.contract}</small></div><strong>฿{money(item.amount)}</strong>{isPaid ? <span className="status status-approved"><Icon name="check" size={13} /> ชำระแล้ว</span> : <button className="secondary-button small-button" onClick={() => onTogglePaid(item.id)}>บันทึกชำระแล้ว</button>}</div>; })}</div></section></div>;
+  if (["สัญญากู้ยืม", "สัญญากู้", "ตารางงวด", "ปฏิทินรับเงิน", "ค้างชำระ", "งานติดตามหนี้"].includes(activeNav)) return <div className="module-stack"><div className="module-header panel"><div><span className="drawer-kicker">การจัดการสินเชื่อ</span><h2>{activeNav}</h2><p>สร้างสัญญาจากคำขอที่อนุมัติแล้ว พร้อมระบุอัตราดอกเบี้ยตามข้อตกลง</p></div><div className="module-header-actions"><button className="primary-button" onClick={onCreateContract}><Icon name="plus" size={16} /> สร้างสัญญา</button></div></div><div className="summary-grid module-stats"><article className="summary-card"><div className="card-heading">สัญญาทั้งหมด</div><div className="metric-value">{contracts.length}<small> สัญญา</small></div></article><article className="summary-card"><div className="card-heading">เงินต้นตามสัญญา</div><div className="metric-value">฿{money(contracts.reduce((sum, item) => sum + item.amount, 0))}</div></article><article className="summary-card"><div className="card-heading">ครบกำหนด 7 วันนี้</div><div className="metric-value">{initialRepayments.length - paidRepayments.length}<small> รายการ</small></div></article><article className="summary-card"><div className="card-heading">รับชำระแล้วเดือนนี้</div><div className="metric-value">฿0</div></article></div>{contracts.length > 0 && <section className="panel module-page"><div className="panel-head"><div><h2>สัญญาที่สร้างล่าสุด</h2><p>อัตราดอกเบี้ยต่อปีและยอดชำระตามเงื่อนไขที่ตกลง</p></div></div><div className="repayment-table">{contracts.map((contract) => <div className="repayment-table-row" key={contract.id}><div className="repayment-date"><Icon name="file" size={16} /><span>{contract.id}</span></div><div className="repayment-person"><b>{contract.name}</b><small>{contract.annualInterestRate}% ต่อปี · {contract.installments} งวด · งวดแรก {new Date(`${contract.firstDueOn}T00:00:00`).toLocaleDateString("th-TH", { day: "numeric", month: "short", year: "numeric" })} · {contract.repaymentMethod}</small></div><strong>฿{money(contract.monthlyPayment)}/งวด</strong><span className="status status-pending"><Icon name="clock" size={13} /> {contract.status}</span></div>)}</div></section>}<section className="panel module-page"><div className="panel-head"><div><h2>ตารางชำระที่ใกล้ถึง</h2><p>ติดตามกำหนดชำระและสถานะรายการ</p></div></div><div className="repayment-table">{initialRepayments.map((item) => { const isPaid = paidRepayments.includes(item.id); return <div className="repayment-table-row" key={item.id}><div className="repayment-date"><Icon name="clock" size={16} /><span>{item.due}</span></div><div className="repayment-person"><b>{item.name}</b><small>{item.id} · สัญญา {item.contract}</small></div><strong>฿{money(item.amount)}</strong>{isPaid ? <span className="status status-approved"><Icon name="check" size={13} /> ชำระแล้ว</span> : <button className="secondary-button small-button" onClick={() => onTogglePaid(item.id)}>บันทึกชำระแล้ว</button>}</div>; })}{initialRepayments.length === 0 && <div className="empty-state">ยังไม่มีรายการครบกำหนดในช่วงนี้</div>}</div></section></div>;
 
   if (["สมาชิก", "ผู้กู้", "ภาพรวมผู้กู้"].includes(activeNav)) {
     const isBorrowerView = activeNav === "ผู้กู้" || activeNav === "ภาพรวมผู้กู้";
-    const visibleMembers = memberRows.filter((member) => `${member.name} ${member.team}`.toLowerCase().includes(query));
-    return <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">สมาชิก</span><h2>{isBorrowerView ? "จัดการข้อมูลผู้กู้" : "จัดการข้อมูลสมาชิก"}</h2><p>เพิ่ม แก้ไข หรือเอาสมาชิกออกจากรายชื่อ พร้อมข้อมูลติดต่อ</p></div><button className="primary-button" onClick={onAddMember}><Icon name="plus" size={17} /> {isBorrowerView ? "เพิ่มผู้กู้" : "เพิ่มสมาชิก"}</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ รหัส หรือแผนก" /></label><span>แสดง {visibleMembers.length} จาก {memberRows.length} คน</span></div><div className="module-list">{visibleMembers.map((member) => <div className="member-row" key={member.id ?? member.name}><div className="person-avatar mint">{member.initials}</div><div className="module-loan-person"><b>{member.name}</b><small>{member.employeeCode ? `${member.employeeCode} · ` : ""}{member.nickname ? `ชื่อเล่น ${member.nickname}` : member.team || "ไม่ระบุแผนก"}{member.phone ? ` · ${member.phone}` : ""}</small></div><div className="member-actions"><button className="secondary-button small-button" onClick={() => onEditMember(member)}>แก้ไข</button><button className="member-delete-button" onClick={() => onDeleteMember(member)}>นำออก</button></div></div>)}{visibleMembers.length === 0 && <div className="empty-state">ไม่พบสมาชิก</div>}</div></section>;
+    const visibleMembers = memberRows.filter((member) => `${member.name} ${member.team} ${member.employeeCode ?? ""} ${member.phone ?? ""} ${member.nationalId ?? ""}`.toLowerCase().includes(query));
+    const borrowerLoanCount = (memberId?: string) => loans.filter((loan) => loan.memberId === memberId).length;
+    const borrowerLoanTotal = (memberId?: string) => loans.filter((loan) => loan.memberId === memberId).reduce((sum, loan) => sum + loan.amount, 0);
+    const selectedBorrowerLoans = selectedBorrower ? loans.filter((loan) => loan.memberId === selectedBorrower.id) : [];
+    return <>
+      {isBorrowerView && <div className="summary-grid module-stats borrower-stats"><article className="summary-card"><div className="card-heading">ผู้กู้ทั้งหมด</div><div className="metric-value">{memberRows.length}<small> คน</small></div><div className="metric-foot">สมาชิกที่ยังใช้งาน</div></article><article className="summary-card"><div className="card-heading">มีรายการกู้</div><div className="metric-value">{memberRows.filter((member) => borrowerLoanCount(member.id) > 0).length}<small> คน</small></div><div className="metric-foot">มีประวัติคำขอกู้ในระบบ</div></article><article className="summary-card"><div className="card-heading">คำขอกู้ทั้งหมด</div><div className="metric-value">{loans.length}<small> รายการ</small></div><div className="metric-foot">เชื่อมกับข้อมูลผู้กู้</div></article><article className="summary-card"><div className="card-heading">ยอดวงเงินที่ขอ</div><div className="metric-value">฿{money(loans.reduce((sum, loan) => sum + loan.amount, 0))}</div><div className="metric-foot">รวมทุกสถานะคำขอ</div></article></div>}
+      <section className="module-page panel"><div className="module-header"><div><span className="drawer-kicker">{isBorrowerView ? "ทะเบียนผู้กู้" : "สมาชิก"}</span><h2>{isBorrowerView ? "จัดการข้อมูลผู้กู้" : "จัดการข้อมูลสมาชิก"}</h2><p>เพิ่ม ดูรายละเอียด แก้ไข หรือนำผู้กู้ออกจากรายชื่อ พร้อมข้อมูลติดต่อและประวัติคำขอ</p></div><button className="primary-button" onClick={onAddMember}><Icon name="plus" size={17} /> {isBorrowerView ? "เพิ่มผู้กู้" : "เพิ่มสมาชิก"}</button></div><div className="module-toolbar"><label className="search-field"><Icon name="search" size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อ รหัสสมาชิก เบอร์โทร หรือเลขบัตร" /></label><span>แสดง {visibleMembers.length} จาก {memberRows.length} คน</span></div><div className="module-list">{visibleMembers.map((member) => { const count = borrowerLoanCount(member.id); const total = borrowerLoanTotal(member.id); return <div className="member-row" key={member.id ?? member.name}><button type="button" className="borrower-open" onClick={() => setSelectedBorrower(member)}><MemberAvatar member={member} /><div className="module-loan-person"><b>{member.name}</b><small>{member.employeeCode ? `${member.employeeCode} · ` : ""}{member.nickname ? `ชื่อเล่น ${member.nickname}` : member.team || "ไม่ระบุแผนก"}{member.phone ? ` · ${member.phone}` : ""}</small></div><div className="member-metric"><small>คำขอกู้</small><b>{count} รายการ</b></div><div className="member-metric"><small>วงเงินที่ขอ</small><b>฿{money(total)}</b></div></button><div className="member-actions"><button className="secondary-button small-button" onClick={() => onEditMember(member)}>แก้ไข</button><button className="member-delete-button" onClick={() => onDeleteMember(member)}>นำออก</button></div></div>; })}{visibleMembers.length === 0 && <div className="empty-state">{memberRows.length ? "ไม่พบผู้กู้ที่ตรงกับการค้นหา" : "ยังไม่มีผู้กู้ · เพิ่มรายชื่อเพื่อเริ่มจัดการข้อมูล"}</div>}</div></section>
+      {selectedBorrower && <div className="drawer-backdrop" onClick={() => setSelectedBorrower(null)}><aside className="detail-drawer borrower-drawer" role="dialog" aria-modal="true" aria-label={`รายละเอียดผู้กู้ ${selectedBorrower.name}`} onClick={(event) => event.stopPropagation()}><div className="drawer-head"><div><span className="drawer-kicker">รายละเอียดผู้กู้</span><h2>{selectedBorrower.name}</h2></div><button className="icon-button" onClick={() => setSelectedBorrower(null)} aria-label="ปิดรายละเอียด"><Icon name="close" /></button></div><div className="drawer-person"><MemberAvatar member={selectedBorrower} large /><div><b>{selectedBorrower.name}</b><small>{selectedBorrower.team || "ไม่ระบุแผนก"}</small></div></div><div className="drawer-section"><h3>ข้อมูลผู้กู้</h3><div className="detail-line"><span>รหัสสมาชิก</span><b>{selectedBorrower.employeeCode || selectedBorrower.id || "—"}</b></div><div className="detail-line"><span>ชื่อเล่น</span><b>{selectedBorrower.nickname || "—"}</b></div><div className="detail-line"><span>โทรศัพท์</span><b>{selectedBorrower.phone || "—"}</b></div><div className="detail-line"><span>เลขประจำตัวประชาชน</span><b>{selectedBorrower.nationalId || "—"}</b></div><div className="detail-line"><span>วันเกิด</span><b>{selectedBorrower.dateOfBirth || "—"}</b></div><div className="detail-line"><span>ที่อยู่</span><b>{selectedBorrower.address || "—"}</b></div></div><div className="drawer-section"><h3>ประวัติคำขอกู้ <small>({selectedBorrowerLoans.length} รายการ)</small></h3>{selectedBorrowerLoans.length ? selectedBorrowerLoans.map((loan) => <button type="button" className="borrower-loan-record" key={loan.id} onClick={() => { setSelectedBorrower(null); onSelect(loan); }}><span><b>{loan.id}</b><small>{loan.purpose} · {loan.date}</small></span><strong>฿{money(loan.amount)}</strong><Status value={loan.status} /></button>) : <div className="borrower-no-loans">ยังไม่มีประวัติคำขอกู้</div>}</div><div className="drawer-actions"><button className="secondary-button" onClick={() => { setSelectedBorrower(null); onEditMember(selectedBorrower); }}>แก้ไขข้อมูล</button><button className="primary-button" onClick={() => { setSelectedBorrower(null); onCreate(); }}>สร้างคำขอกู้</button></div></aside></div>}
+    </>;
   }
 
   if (["รายรับรายจ่าย", "สมุดบัญชีรับ–จ่าย", "ใบแจ้งหนี้", "ลูกหนี้", "รับชำระและประวัติ", "บัญชีทุน", "กระทบยอดและปิดรอบ"].includes(activeNav)) return <LedgerView entries={ledgerEntries} search={search} setSearch={setSearch} onCreated={props.onLedgerCreated} notify={notify} />;
@@ -269,9 +270,13 @@ function ModuleView(props: ModuleViewProps) {
 export default function DashboardApp() {
   const pathname = usePathname();
   const router = useRouter();
-  const [loans, setLoans] = useState(initialLoans);
+  const [loans, setLoans] = useState<Loan[]>([]);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const activeNav = navByPath[pathname] ?? "ภาพรวม";
+  const headerDisplayName = currentUser?.displayName || currentUser?.username || "ผู้ดูแลระบบ";
+  const headerInitials = headerDisplayName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const pendingApprovalCount = loans.filter((loan) => loan.status === "รอพิจารณา").length;
+  const canSearchCurrentPage = ["ภาพรวม", "ผู้ให้กู้", "ผู้กู้", "พิจารณาอนุมัติ", "รายรับรายจ่าย", "สมุดบัญชีรับ–จ่าย", "ใบแจ้งหนี้", "ลูกหนี้", "รับชำระและประวัติ", "บัญชีทุน", "กระทบยอดและปิดรอบ"].includes(activeNav);
   const [filter, setFilter] = useState("ทั้งหมด");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Loan | null>(null);
@@ -282,8 +287,12 @@ export default function DashboardApp() {
   const [contractInstallments, setContractInstallments] = useState("10");
   const [contractInterest, setContractInterest] = useState("0");
   const [customContractInterest, setCustomContractInterest] = useState(false);
-  const [memberList, setMemberList] = useState<Member[]>(members);
+  const [memberList, setMemberList] = useState<Member[]>([]);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [memberCardReading, setMemberCardReading] = useState(false);
+  const [memberPhotoData, setMemberPhotoData] = useState("");
+  const [memberDetailsOpen, setMemberDetailsOpen] = useState(false);
+  const memberFormRef = useRef<HTMLFormElement>(null);
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [loanStep, setLoanStep] = useState<1 | 2>(1);
   const [loanPurpose, setLoanPurpose] = useState("");
@@ -320,6 +329,23 @@ export default function DashboardApp() {
         setLedgerEntries(data.ledger);
       })
       .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch("/api/loans", { cache: "no-store" }),
+      fetch("/api/contracts", { cache: "no-store" }),
+    ]).then(async ([loanResponse, contractResponse]) => {
+      const [loanData, contractData] = await Promise.all([
+        loanResponse.ok ? loanResponse.json() as Promise<{ loans: Loan[] }> : null,
+        contractResponse.ok ? contractResponse.json() as Promise<{ contracts: Contract[] }> : null,
+      ]);
+      if (!active) return;
+      if (loanData) setLoans(loanData.loans);
+      if (contractData) setContracts(contractData.contracts);
+    }).catch(() => undefined);
     return () => { active = false; };
   }, []);
 
@@ -398,13 +424,24 @@ export default function DashboardApp() {
     setModal("loan");
   }
 
-  function changeStatus(id: string, status: LoanStatus) {
-    setLoans((current) => current.map((loan) => loan.id === id ? { ...loan, status } : loan));
-    setSelected(null);
-    notify(status === "อนุมัติแล้ว" ? "อนุมัติคำขอเรียบร้อยแล้ว" : status === "ปฏิเสธ" ? "บันทึกผลการพิจารณาแล้ว" : "ส่งคำขอกลับไปแก้ไขแล้ว");
+  async function changeStatus(id: string, status: LoanStatus) {
+    try {
+      const response = await fetch("/api/loans", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const result = await response.json() as { message?: string };
+      if (!response.ok) throw new Error(result.message ?? "บันทึกสถานะคำขอไม่สำเร็จ");
+      setLoans((current) => current.map((loan) => loan.id === id ? { ...loan, status } : loan));
+      setSelected(null);
+      notify(status === "อนุมัติแล้ว" ? "อนุมัติคำขอเรียบร้อยแล้ว" : status === "ปฏิเสธ" ? "บันทึกผลการพิจารณาแล้ว" : "ส่งคำขอกลับไปแก้ไขแล้ว");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "บันทึกสถานะคำขอไม่สำเร็จ");
+    }
   }
 
-  function createLoan(event: React.FormEvent<HTMLFormElement>) {
+  async function createLoan(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const chosenMember = memberList.find((member) => (member.id ?? member.name) === borrowerChoice);
@@ -414,15 +451,47 @@ export default function DashboardApp() {
     const purpose = loanPurpose;
     if (!purpose || !name) return;
     const initials = name.replace(/\s+/g, "").slice(0, 2);
-    const id = `LN-${String(260420 + loans.length).slice(-6)}`;
-    const newMember = !chosenMember && !memberList.some((member) => member.name.trim() === name);
-    if (newMember) {
-      setMemberList((current) => [{ name, team: "สมาชิก · รอตรวจสอบข้อมูล", loans: 0, balance: 0, state: "ปกติ", initials }, ...current]);
+    try {
+      const response = await fetch("/api/loans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memberId: chosenMember?.id, memberName: chosenMember ? undefined : name, purpose, amount, installments: term, note: activeNav === "ผู้ให้กู้" ? [`ฝ่ายบันทึก: ACS`, String(form.get("note") ?? "").trim()].filter(Boolean).join(" · ") : form.get("note") }),
+      });
+      const result = await response.json() as { loan?: Loan; message?: string };
+      if (!response.ok || !result.loan) throw new Error(result.message ?? "บันทึกคำขอกู้ยืมไม่สำเร็จ");
+      setLoans((current) => [result.loan!, ...current]);
+      if (!chosenMember) setMemberList((current) => [{ id: result.loan!.memberId, name, team: "สมาชิก", loans: 0, balance: 0, state: "ปกติ", initials }, ...current]);
+      setModal(null);
+      setFilter("ทั้งหมด");
+      notify("บันทึกคำขอกู้ยืมใหม่เรียบร้อยแล้ว");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "บันทึกคำขอกู้ยืมไม่สำเร็จ");
     }
-    setLoans((current) => [{ id, name, initials, color: "mint", team: chosenMember?.team ?? "สมาชิก · รอตรวจสอบข้อมูล", purpose, amount, term, date: "21 ต.ค. 2569", status: "รอพิจารณา", score: 0 }, ...current]);
-    setModal(null);
-    setFilter("ทั้งหมด");
-    notify("บันทึกคำขอกู้ยืมใหม่เรียบร้อยแล้ว");
+  }
+
+  async function readCardIntoMemberForm() {
+    setMemberCardReading(true);
+    try {
+      const response = await fetch("/api/card-reader", { method: "POST" });
+      const result = await response.json() as { card?: { fullName: string; nationalId: string; dateOfBirth: string; address: string; photo: string }; message?: string };
+      if (!response.ok || !result.card) throw new Error(result.message ?? "อ่านข้อมูลจากบัตรไม่สำเร็จ");
+      const card = result.card;
+      const setField = (name: string, value: string) => {
+        const field = memberFormRef.current?.elements.namedItem(name);
+        if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = value;
+      };
+      setField("memberName", card.fullName);
+      setField("nationalId", card.nationalId);
+      setField("dateOfBirth", card.dateOfBirth);
+      setField("address", card.address);
+      setMemberPhotoData(card.photo);
+      setMemberDetailsOpen(true);
+      notify("อ่านข้อมูลและรูปถ่ายจากบัตรแล้ว กรุณาตรวจทานก่อนบันทึก");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "อ่านข้อมูลจากบัตรไม่สำเร็จ");
+    } finally {
+      setMemberCardReading(false);
+    }
   }
 
   async function createMember(event: React.FormEvent<HTMLFormElement>) {
@@ -440,6 +509,7 @@ export default function DashboardApp() {
       nationalId: String(form.get("nationalId") ?? "").trim(),
       address: String(form.get("address") ?? "").trim(),
       dateOfBirth: String(form.get("dateOfBirth") ?? "").trim(),
+      photoData: String(form.get("photoData") ?? "").trim(),
     };
     try {
       const response = await fetch("/api/members", {
@@ -453,6 +523,7 @@ export default function DashboardApp() {
         ...result.member,
         id: String(result.member.id ?? editingMember?.id ?? ""),
         name,
+        photoData: result.member.photoData ?? memberPhotoData,
         team,
         loans: editingMember?.loans ?? 0,
         balance: editingMember?.balance ?? 0,
@@ -493,7 +564,7 @@ export default function DashboardApp() {
     }
   }
 
-  function createContract(event: React.FormEvent<HTMLFormElement>) {
+  async function createContract(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const loan = loans.find((item) => item.id === contractLoanId && item.status === "อนุมัติแล้ว");
@@ -505,26 +576,20 @@ export default function DashboardApp() {
     const installments = Number(contractInstallments);
     const interest = Number(contractInterest);
     if (amount <= 0 || installments <= 0 || interest < 0) return;
-    const monthlyRate = interest / 100 / 12;
-    const monthlyPayment = Math.round(monthlyRate === 0
-      ? amount / installments
-      : amount * monthlyRate / (1 - Math.pow(1 + monthlyRate, -installments)));
-    const contract: Contract = {
-      id: `CT-261021-${String(contracts.length + 1).padStart(2, "0")}`,
-      applicationId: loan.id,
-      name: loan.name,
-      amount,
-      installments,
-      monthlyPayment,
-      annualInterestRate: interest,
-      signedOn: "21 ต.ค. 2569",
-      firstDueOn: String(form.get("firstDueOn") ?? ""),
-      repaymentMethod: String(form.get("repaymentMethod") ?? "หักเงินเดือน"),
-      status: "รอลงนาม",
-    };
-    setContracts((current) => [contract, ...current]);
-    setModal(null);
-    notify(`สร้างสัญญา ${contract.id} แล้ว · รอลงนาม`);
+    try {
+      const response = await fetch("/api/contracts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ applicationId: loan.id, amount, installments, annualInterestRate: interest, firstDueOn: form.get("firstDueOn"), repaymentMethod: form.get("repaymentMethod") }),
+      });
+      const result = await response.json() as { contract?: Contract; message?: string };
+      if (!response.ok || !result.contract) throw new Error(result.message ?? "บันทึกสัญญาไม่สำเร็จ");
+      setContracts((current) => [result.contract!, ...current]);
+      setModal(null);
+      notify(`สร้างสัญญา ${result.contract.id} แล้ว · รอลงนาม`);
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "บันทึกสัญญาไม่สำเร็จ");
+    }
   }
 
   async function logout() {
@@ -539,7 +604,7 @@ export default function DashboardApp() {
         currentUser={currentUser}
         companyName={companyName}
         mobileMenu={mobileMenu}
-        pendingApprovalCount={loans.filter((loan) => loan.status === "รอพิจารณา").length}
+        pendingApprovalCount={pendingApprovalCount}
         onCloseMobileMenu={() => setMobileMenu(false)}
         onNavigate={() => { setSearch(""); setMobileMenu(false); }}
         onLogout={logout}
@@ -548,7 +613,29 @@ export default function DashboardApp() {
       {mobileMenu && <button className="mobile-scrim" onClick={() => setMobileMenu(false)} aria-label="ปิดเมนู" />}
 
       <section className="main-area">
-        <header className="topbar"><button className="mobile-menu" onClick={() => setMobileMenu(true)} aria-label="เปิดเมนู"><Icon name="menu" /></button><div className="breadcrumb">{activeNav === "ภาพรวม" ? "Overview" : <><span>ใจดี</span><Icon name="chevron" size={15} /><b>{activeNav}</b></>}</div><label className="global-search"><Icon name="search" size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาชื่อผู้กู้ รายการบัญชี..." /></label><div className="top-actions"><button className="icon-button notification-button" aria-label="การแจ้งเตือน" onClick={() => notify(`มีคำขอรอพิจารณา ${loans.filter((loan) => loan.status === "รอพิจารณา").length} รายการ`)}><Icon name="bell" /><i /></button><div className="top-user" title={currentUser?.username ?? "บัญชีผู้ดูแล"}>{(currentUser?.displayName ?? currentUser?.username ?? "A").slice(0, 1).toUpperCase()}</div></div></header>
+        <header className="topbar">
+          <button className="mobile-menu" onClick={() => setMobileMenu(true)} aria-label="เปิดเมนู"><Icon name="menu" /></button>
+          <div className="topbar-heading">
+            <div className="breadcrumb"><b>{activeNav}</b></div>
+            <span className="topbar-context">{activeNav === "ภาพรวม" ? "ภาพรวมสินเชื่อและการเงิน" : `จัดการ${activeNav}ขององค์กร`}</span>
+          </div>
+          {canSearchCurrentPage && <div className="global-search">
+            <Icon name="search" size={17} />
+            <input aria-label="ค้นหาในหน้าปัจจุบัน" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ค้นหาในหน้านี้..." />
+            {search && <button type="button" className="search-clear" onClick={() => setSearch("")} aria-label="ล้างคำค้น"><Icon name="close" size={14} /></button>}
+          </div>}
+          <div className="top-actions">
+            <button className="icon-button notification-button" aria-label={`เปิดคำขอรอพิจารณา ${pendingApprovalCount} รายการ`} title="ไปยังคำขอรอพิจารณา" onClick={() => router.push("/loans/review")}>
+              <Icon name="bell" />
+              {pendingApprovalCount > 0 && <span className="notification-count">{pendingApprovalCount > 9 ? "9+" : pendingApprovalCount}</span>}
+            </button>
+            <button className="top-account" onClick={() => router.push("/settings")} title="ไปที่ตั้งค่าระบบ" aria-label={`บัญชี ${headerDisplayName} ไปที่ตั้งค่าระบบ`}>
+              <span className="top-user">{headerInitials || "A"}</span>
+              <span className="top-account-copy"><b>{headerDisplayName}</b><small>{currentUser?.username ? `@${currentUser.username} · ` : ""}{currentUser?.role === "admin" ? "ผู้ดูแลระบบ" : "บัญชีผู้ใช้"}</small></span>
+              <Icon name="chevron-down" size={15} />
+            </button>
+          </div>
+        </header>
 
         <div className="content-wrap">
           <div className="welcome-row"><div><div className="eyebrow"><span className="eyebrow-dot" /> {activeNav === "ภาพรวม" ? "วันทำงานที่ดี เริ่มจากใจที่สบาย" : "จัดการงานตามหมวดหมู่"}</div><h1>{activeNav === "ภาพรวม" ? <>สวัสดี, {currentUser?.displayName ?? currentUser?.username ?? "ผู้ดูแลระบบ"} <span className="wave">✦</span></> : activeNav}</h1><p className="welcome-sub">{activeNav === "ภาพรวม" ? "จัดการสินเชื่อและดูแลสมาชิกของคุณได้ในที่เดียว" : `พื้นที่${activeNav} · ข้อมูลองค์กร ${companyName}`}</p></div>{activeNav === "ภาพรวม" && <button className="primary-button" onClick={startLoanRequest}><Icon name="plus" size={18} /> สร้างคำขอกู้ยืม</button>}</div>
@@ -583,7 +670,7 @@ export default function DashboardApp() {
           </div>
 
           <div className="bottom-note"><span className="note-spark">✳</span><div><b>สินเชื่อที่ดี เริ่มต้นจากความเข้าใจ</b><span>ทุกคำขอได้รับการพิจารณาอย่างเป็นธรรมและโปร่งใส</span></div><button onClick={() => notify("เปิดคู่มือแนวทางการพิจารณาสินเชื่อ")}>แนวทางการพิจารณา <Icon name="arrow" size={15} /></button><div className="note-decoration">ใจดี</div></div>
-          </> : <ModuleView activeNav={activeNav} loans={loans} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onSelect={setSelected} onCreate={startLoanRequest} onCreateContract={() => { const nextLoan = loans.find((loan) => loan.status === "อนุมัติแล้ว" && !contracts.some((contract) => contract.applicationId === loan.id)); if (nextLoan) { setContractLoanId(nextLoan.id); setContractAmount(String(nextLoan.amount)); setContractInstallments(String(nextLoan.term)); } setContractInterest(monthlyInterest); setCustomContractInterest(false); setModal("contract"); }} contracts={contracts} onAddMember={() => { setEditingMember(null); setModal("member"); }} onEditMember={(member) => { setEditingMember(member); setModal("member"); }} onDeleteMember={deleteMember} members={memberList} notify={notify} paidRepayments={paidRepayments} onTogglePaid={(id) => setPaidRepayments((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} companyName={companyName} setCompanyName={setCompanyName} loanLimit={loanLimit} setLoanLimit={setLoanLimit} monthlyInterest={monthlyInterest} setMonthlyInterest={setMonthlyInterest} ledgerEntries={ledgerEntries} onLedgerCreated={(entry) => setLedgerEntries((current) => [entry, ...current])} />}
+          </> : <ModuleView activeNav={activeNav} loans={loans} search={search} setSearch={setSearch} filter={filter} setFilter={setFilter} onSelect={setSelected} onCreate={startLoanRequest} onCreateContract={() => { const nextLoan = loans.find((loan) => loan.status === "อนุมัติแล้ว" && !contracts.some((contract) => contract.applicationId === loan.id)); if (nextLoan) { setContractLoanId(nextLoan.id); setContractAmount(String(nextLoan.amount)); setContractInstallments(String(nextLoan.term)); } setContractInterest(monthlyInterest); setCustomContractInterest(false); setModal("contract"); }} contracts={contracts} onAddMember={() => { setEditingMember(null); setMemberPhotoData(""); setMemberDetailsOpen(false); setModal("member"); }} onEditMember={(member) => { setEditingMember(member); setMemberPhotoData(member.photoData ?? ""); setMemberDetailsOpen(Boolean(member.nationalId || member.dateOfBirth || member.address)); setModal("member"); }} onDeleteMember={deleteMember} members={memberList} notify={notify} paidRepayments={paidRepayments} onTogglePaid={(id) => setPaidRepayments((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])} companyName={companyName} setCompanyName={setCompanyName} loanLimit={loanLimit} setLoanLimit={setLoanLimit} monthlyInterest={monthlyInterest} setMonthlyInterest={setMonthlyInterest} ledgerEntries={ledgerEntries} onLedgerCreated={(entry) => setLedgerEntries((current) => [entry, ...current])} />}
           <footer className="footer"><span>© 2569 ใจดี · ระบบจัดการสินเชื่อสำหรับองค์กร</span><span>ข้อมูลอัปเดตล่าสุด 09:42 น.</span></footer>
         </div>
       </section>
@@ -592,7 +679,8 @@ export default function DashboardApp() {
 
       {modal === "loan" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal loan-request-modal" role="dialog" aria-modal="true" aria-labelledby="loan-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สร้างรายการใหม่ · ขั้นตอน {loanStep} จาก 2</span><h2 id="loan-title">สร้างคำขอกู้ยืม</h2><p>{loanStep === 1 ? "เลือกวัตถุประสงค์เพื่อจัดหมวดคำขอ" : "เลือกผู้กู้หรือเพิ่มชื่อใหม่ แล้วระบุวงเงิน"}</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div><div className="loan-step-track"><span className={loanStep === 1 ? "active" : "complete"}>01 <b>วัตถุประสงค์</b></span><i /><span className={loanStep === 2 ? "active" : ""}>02 <b>ข้อมูลผู้กู้</b></span></div>{loanStep === 1 ? <div className="loan-focus-grid">{loanFocusOptions.map((option) => <button type="button" className={`loan-focus-option ${loanPurpose === option.value ? "selected" : ""}`} key={option.value} onClick={() => setLoanPurpose(option.value)}><span className="loan-focus-icon"><Icon name={option.icon} size={19} /></span><span><b>{option.title}</b><small>{option.detail}</small></span>{loanPurpose === option.value && <span className="loan-focus-check"><Icon name="check" size={15} /></span>}</button>)}<div className="loan-purpose-selected">{loanPurpose ? <>เลือกแล้ว: <b>{loanPurpose}</b></> : "เลือกหนึ่งรายการเพื่อดำเนินการต่อ"}</div><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button><button type="button" className="primary-button" disabled={!loanPurpose} onClick={() => setLoanStep(2)}>ถัดไป: เลือกผู้กู้ <Icon name="arrow" size={16} /></button></div></div> : <form onSubmit={createLoan}><div className="loan-borrower-switch"><button type="button" className={borrowerChoice === "new" ? "selected" : ""} onClick={() => setBorrowerChoice("new")}><Icon name="plus" size={16} /> เพิ่มชื่อผู้กู้</button><button type="button" className={borrowerChoice !== "new" ? "selected" : ""} onClick={() => { if (memberList.length) setBorrowerChoice(memberList[0].id ?? memberList[0].name); }} disabled={!memberList.length}><Icon name="people" size={16} /> เลือกสมาชิกเดิม</button></div>{borrowerChoice === "new" ? <label>ชื่อผู้กู้<input name="name" required placeholder="ระบุชื่อและนามสกุล" /></label> : <label>เลือกผู้กู้<select value={borrowerChoice} onChange={(event) => setBorrowerChoice(event.target.value)}>{memberList.map((member) => <option key={member.id ?? member.name} value={member.id ?? member.name}>{member.name}{member.employeeCode ? ` · ${member.employeeCode}` : ""}</option>)}</select></label>}<div className="loan-purpose-summary"><span className="loan-focus-icon"><Icon name="check" size={17} /></span><span><small>วัตถุประสงค์ที่เลือก</small><b>{loanPurpose}</b></span><button type="button" onClick={() => setLoanStep(1)}>แก้ไข</button></div><div className="form-row"><label>วงเงินที่ต้องการ (บาท)<input name="amount" required type="number" min="1000" max={loanLimit} placeholder="10,000" /><small>วงเงินสูงสุด ฿{money(Number(loanLimit))}</small></label><label>จำนวนงวด<select name="term" defaultValue="6"><option value="3">3 งวด</option><option value="6">6 งวด</option><option value="10">10 งวด</option><option value="12">12 งวด</option></select></label></div><label>หมายเหตุ<textarea name="note" rows={3} placeholder="รายละเอียดเพิ่มเติม เช่น รายการค่าใช้จ่าย" /></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setLoanStep(1)}>ย้อนกลับ</button><button type="submit" className="primary-button">บันทึกคำขอ <Icon name="arrow" size={16} /></button></div></form>}</div></div>}
       {modal === "contract" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">จัดการสินเชื่อ · สร้างจากคำขอที่อนุมัติ</span><h2 id="contract-title">สร้างสัญญายืมเงิน</h2><p>ตรวจสอบข้อมูลและเงื่อนไขให้ครบก่อนจัดทำสัญญา</p></div><button className="icon-button" onClick={() => setModal(null)} aria-label="ปิด"><Icon name="close" /></button></div>{eligibleLoans.length === 0 ? <div className="contract-empty"><span className="contract-empty-icon"><Icon name="check" /></span><b>ยังไม่มีคำขอที่พร้อมทำสัญญา</b><span>คำขอต้องได้รับอนุมัติก่อน จึงจะสร้างสัญญาได้</span><button className="secondary-button" onClick={() => { setModal(null); router.push("/loans/review"); }}>ไปที่คำขอกู้ยืม</button></div> : <form onSubmit={createContract}><div className="contract-section-label"><span>01</span> เลือกคำขอที่อนุมัติ</div><label>คำขอกู้ยืม<select value={contractLoanId} onChange={(event) => { const loan = loans.find((item) => item.id === event.target.value); setContractLoanId(event.target.value); if (loan) { setContractAmount(String(loan.amount)); setContractInstallments(String(loan.term)); } }} required>{eligibleLoans.map((loan) => <option key={loan.id} value={loan.id}>{loan.id} · {loan.name} · ฿{money(loan.amount)}</option>)}</select></label>{selectedContractLoan && <div className="contract-member-card"><div className={`person-avatar ${selectedContractLoan.color}`}>{selectedContractLoan.initials}</div><div><b>{selectedContractLoan.name}</b><span>{selectedContractLoan.team} · {selectedContractLoan.purpose}</span></div><Status value={selectedContractLoan.status} /></div>}<div className="contract-section-label"><span>02</span> กำหนดเงื่อนไขสัญญา</div><div className="form-row"><label>เงินต้น (บาท)<input type="number" min="1" max={loanLimit} value={contractAmount} onChange={(event) => setContractAmount(event.target.value)} required /><small>วงเงินสูงสุดตามนโยบาย ฿{money(Number(loanLimit))}</small></label><label>จำนวนงวด<input type="number" min="1" max="36" value={contractInstallments} onChange={(event) => setContractInstallments(event.target.value)} required /><small>แบ่งชำระรายเดือน</small></label></div><div className="form-row"><div className="contract-rate-picker"><label>ดอกเบี้ยต่อปี (%)<select className="contract-rate-select" value={customContractInterest ? "custom" : contractInterest} onChange={(event) => { const value = event.target.value; if (value === "custom") setCustomContractInterest(true); else { setContractInterest(value); setCustomContractInterest(false); } }}><option value="0">ไม่คิดดอกเบี้ย · 0%</option>{["5", "10", "15", "20", "25"].map((rate) => <option key={rate} value={rate}>ลดต้นลดดอก · {rate}% ต่อปี</option>)}<option value="custom">กำหนดอัตราเอง</option></select></label>{customContractInterest && <label>ระบุอัตราดอกเบี้ยลดต้นลดดอกต่อปี (%)<input type="number" min="0" max="100" step="0.01" value={contractInterest} onChange={(event) => setContractInterest(event.target.value)} required /></label>}<small>{Number(contractInterest) === 0 ? "แบ่งชำระเงินต้นเท่ากัน โดยไม่มีดอกเบี้ย" : "คำนวณยอดผ่อนรายเดือนจากเงินต้นคงเหลือ"}</small></div><label>วันครบกำหนดงวดแรก<input type="date" name="firstDueOn" defaultValue="2026-11-30" required /><small>งวดถัดไปครบกำหนดวันเดียวกันของเดือน</small></label></div><label>วิธีชำระ<select name="repaymentMethod" defaultValue="หักเงินเดือน"><option>หักเงินเดือน</option><option>โอนเงินผ่านธนาคาร</option><option>ชำระเงินสด</option></select></label><div className="contract-preview"><div className="contract-preview-top"><span>{Number(contractInterest) === 0 ? "ประมาณการแบบไม่คิดดอกเบี้ย" : "ประมาณการแบบลดต้นลดดอก"}</span><span className="preview-chip">ตัวอย่าง</span></div><div className="contract-preview-main"><span>ยอดชำระต่อเดือน</span><b>฿{money(contractPreviewPayment)}<small> / เดือน</small></b></div><div className="contract-preview-details"><span>เงินต้น ฿{money(Number(contractAmount || 0))}</span><i /><span>{contractInstallments || 0} งวด</span><i /><span>รวม ฿{money(contractPreviewPayment * Number(contractInstallments || 0))}</span></div><small className="contract-disclaimer">ยอดจริงอาจเปลี่ยนตามวิธีคำนวณและวันที่ทำสัญญา กรุณาตรวจสอบเงื่อนไขก่อนให้ผู้กู้ลงนาม</small></div><label className="contract-consent"><input type="checkbox" required /> <span>ยืนยันว่าตรวจสอบวงเงิน อัตราดอกเบี้ย และกำหนดชำระแล้ว</span></label><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setModal(null)}>ยกเลิก</button><button type="submit" className="primary-button"><Icon name="file" size={16} /> บันทึกสัญญาฉบับร่าง</button></div><div className="contract-footnote">ระบบจะบันทึกสัญญาเป็น “รอลงนาม” และยังไม่เริ่มนับงวดชำระ</div></form>}</div></div>}
-      {modal === "member" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal member-modal" role="dialog" aria-modal="true" aria-labelledby="member-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สมาชิก · {editingMember ? "แก้ไขข้อมูล" : "เพิ่มรายชื่อ"}</span><h2 id="member-title">{editingMember ? "แก้ไขสมาชิก" : "เพิ่มสมาชิก"}</h2><p>ข้อมูลบัตรประชาชนและที่อยู่จะเห็นได้เฉพาะผู้ดูแลระบบ</p></div><button className="icon-button" onClick={() => { setModal(null); setEditingMember(null); }} aria-label="ปิด"><Icon name="close" /></button></div><form key={editingMember?.id ?? "new-member"} onSubmit={createMember}><div className="form-row"><label>ชื่อและนามสกุล<input name="memberName" required defaultValue={editingMember?.name ?? ""} placeholder="เช่น สมชาย ใจดี" /></label><label>รหัสสมาชิก<input name="employeeCode" defaultValue={editingMember?.employeeCode ?? ""} placeholder="เว้นว่างเพื่อสร้างรหัสอัตโนมัติ" /></label></div><div className="form-row"><label>ชื่อเล่น<input name="nickname" defaultValue={editingMember?.nickname ?? ""} /></label><label>แผนก<input name="team" defaultValue={editingMember?.team ?? ""} placeholder="เช่น ฝ่ายผลิต" /></label></div><label>เบอร์โทรศัพท์<input name="phone" type="tel" defaultValue={editingMember?.phone ?? ""} /></label><details className="member-extra-fields"><summary>ข้อมูลส่วนบุคคลเพิ่มเติม</summary><div className="form-row"><label>เลขบัตรประชาชน<input name="nationalId" inputMode="numeric" defaultValue={editingMember?.nationalId ?? ""} /></label><label>วันเกิด<input name="dateOfBirth" placeholder="YYYY-MM-DD" defaultValue={editingMember?.dateOfBirth ?? ""} /></label></div><label>ที่อยู่<textarea name="address" rows={2} defaultValue={editingMember?.address ?? ""} /></label></details><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setModal(null); setEditingMember(null); }}>ยกเลิก</button><button type="submit" className="primary-button">{editingMember ? "บันทึกการแก้ไข" : "บันทึกสมาชิก"} <Icon name="check" size={16} /></button></div></form></div></div>}
+
+      {modal === "member" && <div className="modal-backdrop" onClick={() => setModal(null)}><div className="request-modal member-modal" role="dialog" aria-modal="true" aria-labelledby="member-title" onClick={(event) => event.stopPropagation()}><div className="modal-head"><div><span className="drawer-kicker">สมาชิก · {editingMember ? "แก้ไขข้อมูล" : "เพิ่มรายชื่อ"}</span><h2 id="member-title">{editingMember ? "แก้ไขสมาชิก" : "เพิ่มสมาชิก"}</h2><p>ข้อมูลบัตรประชาชน รูปถ่าย และที่อยู่จะเห็นได้เฉพาะผู้ดูแลระบบ</p></div><button className="icon-button" onClick={() => { setModal(null); setEditingMember(null); }} aria-label="ปิด"><Icon name="close" /></button></div><button type="button" className="secondary-button member-card-reader-trigger" onClick={readCardIntoMemberForm} disabled={memberCardReading}><Icon name={memberCardReading ? "clock" : "card"} size={15} />{memberCardReading ? "กำลังอ่านบัตร…" : "อ่านข้อมูลและรูปจากบัตร"}</button><form ref={memberFormRef} key={editingMember?.id ?? "new-member"} onSubmit={createMember}><input type="hidden" name="photoData" value={memberPhotoData} readOnly />{memberPhotoData && <div className="member-card-photo-preview"><img src={`data:image/jpeg;base64,${memberPhotoData}`} alt={`รูปจากบัตรของ ${editingMember?.name || "สมาชิก"}`} /><span>รูปถ่ายจากชิปบัตร · ตรวจทานก่อนบันทึก</span></div>}<div className="form-row"><label>ชื่อและนามสกุล<input name="memberName" required defaultValue={editingMember?.name || ""} placeholder="กรอกชื่อตามบัตรประชาชน" /></label><label>รหัสสมาชิก<input name="employeeCode" defaultValue={editingMember?.employeeCode ?? ""} placeholder="เว้นว่างเพื่อสร้างรหัสอัตโนมัติ" /></label></div><div className="form-row"><label>ชื่อเล่น<input name="nickname" defaultValue={editingMember?.nickname ?? ""} /></label><label>แผนก<input name="team" defaultValue={editingMember?.team ?? ""} placeholder="เช่น ฝ่ายผลิต" /></label></div><label>เบอร์โทรศัพท์<input name="phone" type="tel" defaultValue={editingMember?.phone ?? ""} /></label><details className="member-extra-fields" open={memberDetailsOpen} onToggle={(event) => setMemberDetailsOpen(event.currentTarget.open)}><summary>ข้อมูลอ้างอิงจากบัตรประชาชน</summary><p className="member-extra-hint">ตรวจทานข้อมูลที่อ่านได้ก่อนบันทึก · ทุกช่องไม่บังคับกรอก</p><div className="form-row"><label>เลขประจำตัวประชาชน<input name="nationalId" inputMode="numeric" autoComplete="off" maxLength={13} defaultValue={editingMember?.nationalId || ""} placeholder="เลข 13 หลัก" /><small>เก็บเฉพาะเพื่อใช้อ้างอิงข้อมูลสมาชิก</small></label><label>วันเกิด<input name="dateOfBirth" placeholder="YYYY-MM-DD" autoComplete="bday" defaultValue={editingMember?.dateOfBirth || ""} /><small>ใช้รูปแบบปี ค.ศ. เช่น 1987-05-14</small></label></div><label>ที่อยู่ตามบัตร<textarea name="address" rows={2} autoComplete="street-address" defaultValue={editingMember?.address || ""} placeholder="บ้านเลขที่ ถนน ตำบล/แขวง อำเภอ/เขต จังหวัด และรหัสไปรษณีย์" /></label></details><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => { setModal(null); setEditingMember(null); }}>ยกเลิก</button><button type="submit" className="primary-button">{editingMember ? "บันทึกการแก้ไข" : "บันทึกสมาชิก"} <Icon name="check" size={16} /></button></div></form></div></div>}
 
       {toast && <Toast toast={toast} onDismiss={dismissToast} />}
     </main>

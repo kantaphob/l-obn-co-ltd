@@ -7,230 +7,26 @@ datasource db {
   provider = "sqlite"
 }
 
-model Organization {
-  id           String               @id @default(uuid())
-  name         String
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
-  departments  Department[]
-  members      Member[]
-  applications LoanApplication[]
-  settings     OrganizationSetting[]
-  auditLogs    AuditLog[]
-  ledgerEntries CompanyLedgerEntry[]
-
-  @@map("organizations")
+model User {
+  id          Int          @id @default(autoincrement())
+  acccode     String       @unique
+  username    String       @unique
+  password    String
+  Level       Int
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  userProfile UserProfile?
 }
 
-model Department {
-  id             String       @id @default(uuid())
-  organizationId String       @map("organization_id")
-  name           String
-  createdAt      DateTime     @default(now()) @map("created_at")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  members        Member[]
+model UserProfile {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @unique
+  name      String
+  surname   String
+  email     String   @unique
+  phone     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@unique([organizationId, name])
-  @@map("departments")
-}
-
-model Member {
-  id               String            @id @default(uuid())
-  organizationId   String            @map("organization_id")
-  departmentId     String?           @map("department_id")
-  employeeCode     String?           @map("employee_code")
-  fullName         String            @map("full_name")
-  nickname         String?
-  phone            String?
-  nationalId       String?           @map("national_id")
-  address          String?
-  dateOfBirth      String?           @map("date_of_birth")
-  email            String?
-  employmentStatus String            @default("active") @map("employment_status")
-  hiredOn          String?           @map("hired_on")
-  note             String?
-  createdAt        DateTime          @default(now()) @map("created_at")
-  updatedAt        DateTime          @updatedAt @map("updated_at")
-  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  department       Department?       @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  applications     LoanApplication[]
-  contracts        LoanContract[]
-  ledgerEntries    CompanyLedgerEntry[]
-
-  @@unique([organizationId, employeeCode])
-  @@index([departmentId])
-  @@map("members")
-}
-
-model LoanApplication {
-  id                    String         @id @default(uuid())
-  applicationNo         String         @unique @map("application_no")
-  organizationId        String         @map("organization_id")
-  memberId              String         @map("member_id")
-  purpose               String
-  requestedAmountSatang BigInt         @map("requested_amount_satang")
-  requestedInstallments Int            @map("requested_installments")
-  status                String         @default("pending")
-  note                  String?
-  reviewedBy            String?        @map("reviewed_by")
-  reviewedAt            DateTime?      @map("reviewed_at")
-  decisionNote          String?        @map("decision_note")
-  submittedAt           DateTime       @default(now()) @map("submitted_at")
-  createdAt             DateTime       @default(now()) @map("created_at")
-  updatedAt             DateTime       @updatedAt @map("updated_at")
-  organization          Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  member                Member         @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  documents             LoanDocument[]
-  contract              LoanContract?
-
-  @@index([memberId, submittedAt(sort: Desc)])
-  @@index([status, submittedAt(sort: Desc)])
-  @@map("loan_applications")
-}
-
-model LoanDocument {
-  id               String          @id @default(uuid())
-  applicationId    String          @map("application_id")
-  documentType     String          @map("document_type")
-  originalFilename String          @map("original_filename")
-  storagePath      String          @map("storage_path")
-  mimeType         String?         @map("mime_type")
-  fileSizeBytes    BigInt?         @map("file_size_bytes")
-  uploadedAt       DateTime        @default(now()) @map("uploaded_at")
-  application      LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-
-  @@index([applicationId])
-  @@map("loan_documents")
-}
-
-model LoanContract {
-  id                  String          @id @default(uuid())
-  contractNo          String          @unique @map("contract_no")
-  applicationId       String          @unique @map("application_id")
-  memberId            String          @map("member_id")
-  principalSatang     BigInt          @map("principal_satang")
-  monthlyInterestRate Float           @default(0) @map("monthly_interest_rate")
-  installmentCount    Int             @map("installment_count")
-  signedOn            String?         @map("signed_on")
-  firstDueOn          String?         @map("first_due_on")
-  status              String          @default("active")
-  createdAt           DateTime        @default(now()) @map("created_at")
-  updatedAt           DateTime        @updatedAt @map("updated_at")
-  application         LoanApplication @relation(fields: [applicationId], references: [id], onDelete: Restrict)
-  member              Member          @relation(fields: [memberId], references: [id], onDelete: Restrict)
-  installments        Installment[]
-  payments            Payment[]
-
-  @@index([memberId, status])
-  @@map("loan_contracts")
-}
-
-model Installment {
-  id                  String             @id @default(uuid())
-  contractId          String             @map("contract_id")
-  installmentNo       Int                @map("installment_no")
-  dueOn               String             @map("due_on")
-  principalDueSatang  BigInt             @map("principal_due_satang")
-  interestDueSatang   BigInt             @default(0) @map("interest_due_satang")
-  status              String             @default("unpaid")
-  createdAt           DateTime           @default(now()) @map("created_at")
-  contract            LoanContract       @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  allocations         PaymentAllocation[]
-
-  @@unique([contractId, installmentNo])
-  @@index([dueOn, status])
-  @@map("installments")
-}
-
-model Payment {
-  id            String              @id @default(uuid())
-  receiptNo     String              @unique @map("receipt_no")
-  contractId    String              @map("contract_id")
-  amountSatang  BigInt              @map("amount_satang")
-  paidAt        DateTime            @default(now()) @map("paid_at")
-  paymentMethod String              @default("cash") @map("payment_method")
-  referenceNo   String?             @map("reference_no")
-  note          String?
-  recordedBy    String?             @map("recorded_by")
-  createdAt     DateTime            @default(now()) @map("created_at")
-  contract      LoanContract        @relation(fields: [contractId], references: [id], onDelete: Restrict)
-  allocations   PaymentAllocation[]
-
-  @@index([contractId, paidAt(sort: Desc)])
-  @@map("payments")
-}
-
-model PaymentAllocation {
-  paymentId     String      @map("payment_id")
-  installmentId String      @map("installment_id")
-  amountSatang  BigInt      @map("amount_satang")
-  payment       Payment     @relation(fields: [paymentId], references: [id], onDelete: Restrict)
-  installment   Installment @relation(fields: [installmentId], references: [id], onDelete: Restrict)
-
-  @@id([paymentId, installmentId])
-  @@index([installmentId])
-  @@map("payment_allocations")
-}
-
-model OrganizationSetting {
-  organizationId String       @map("organization_id")
-  settingKey     String       @map("setting_key")
-  settingValue   String       @map("setting_value")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@id([organizationId, settingKey])
-  @@map("organization_settings")
-}
-
-model CompanyLedgerEntry {
-  id                      String       @id @default(uuid())
-  importKey               String       @unique @map("import_key")
-  organizationId          String       @map("organization_id")
-  occurredAt              DateTime     @map("occurred_at")
-  transactionDate         String       @map("transaction_date")
-  transactionTime         String?      @map("transaction_time")
-  transactionNo           String?      @map("transaction_no")
-  headquartersCode        String?      @map("headquarters_code")
-  branchCode              String?      @map("branch_code")
-  entryType               String       @map("entry_type")
-  description             String
-  category                String
-  memberId                String?      @map("member_id")
-  relatedParty            String?      @map("related_party")
-  paymentChannel          String?      @map("payment_channel")
-  referenceNo             String?      @map("reference_no")
-  sourceLabel             String?      @map("source_label")
-  baseAmountSatang        BigInt       @default(0) @map("base_amount_satang")
-  vatPercent              Float?       @map("vat_percent")
-  vatAmountSatang         BigInt       @default(0) @map("vat_amount_satang")
-  withholdingPercent      Float?       @map("withholding_percent")
-  withholdingAmountSatang BigInt       @default(0) @map("withholding_amount_satang")
-  netIncomeSatang         BigInt       @default(0) @map("net_income_satang")
-  netExpenseSatang        BigInt       @default(0) @map("net_expense_satang")
-  note                    String?
-  createdAt               DateTime     @default(now()) @map("created_at")
-  organization            Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  member                  Member?      @relation(fields: [memberId], references: [id], onDelete: SetNull)
-
-  @@unique([organizationId, transactionNo])
-  @@index([organizationId, occurredAt(sort: Desc)])
-  @@index([memberId, occurredAt(sort: Desc)])
-  @@map("company_ledger_entries")
-}
-
-model AuditLog {
-  id            String       @id @default(uuid())
-  organizationId String      @map("organization_id")
-  actorId       String?      @map("actor_id")
-  entityType    String       @map("entity_type")
-  entityId      String       @map("entity_id")
-  action        String
-  oldValuesJson String?      @map("old_values_json")
-  newValuesJson String?      @map("new_values_json")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  organization  Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-
-  @@index([entityType, entityId, createdAt(sort: Desc)])
-  @@map("audit_logs")
+  user User @relation(fields: [userId], references: [id])
 }
